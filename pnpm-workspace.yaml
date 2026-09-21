@@ -1,0 +1,12 @@
+packages:
+  - apps/*
+  - packages/*
+
+catalog:
+  typescript: ^6.0.3
+  "@types/node": ^26.6.2
+  tsx: ^4.23.15
+
+allowBuilds:
+  esbuild: true
+  sharp: true
