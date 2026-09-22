@@ -16,6 +16,8 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS dev
 COPY . .
 EXPOSE 4321
+HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
+  CMD node -e "fetch('http://localhost:4321/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["pnpm", "--filter", "web", "run", "dev", "--host"]
 
 FROM deps AS build
@@ -25,3 +27,5 @@ RUN pnpm --filter web... run build
 FROM nginx:1.27-alpine AS runtime
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
+HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
+  CMD wget -q --spider http://localhost:80/ || exit 1

@@ -19,6 +19,8 @@ RUN pnpm install --frozen-lockfile
 FROM deps AS dev
 COPY . .
 EXPOSE 3000
+HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["pnpm", "--filter", "api", "run", "dev"]
 
 FROM deps AS build
@@ -29,4 +31,8 @@ FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /app /app
 EXPOSE 3000
+HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
+  CMD node -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["node", "apps/api/dist/index.js"]
+
+
