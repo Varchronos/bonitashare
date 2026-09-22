@@ -24,10 +24,15 @@
   "packageManager": "pnpm@12.5.1",
   "dependencies": {
     "@bonitashare/shared-types": "workspace:*",
-    "fastify": "^5.12.5"
+    "dotenv": "^18.0.1",
+    "drizzle-orm": "1.0.0-rc.4",
+    "fastify": "^5.12.5",
+    "pg": "^8.23.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pg": "^8.23.1",
+    "drizzle-kit": "1.0.0-rc.4",
     "tsx": "catalog:",
     "typescript": "catalog:"
   }
