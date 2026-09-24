@@ -3,9 +3,9 @@ import { sql } from 'drizzle-orm';
 
 export const users = pgTable('users', {
     id: uuid('id').primaryKey().defaultRandom(),
-    email: text('email').notNull().unique(),
+    email: text('email').unique(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [index('users_with_email_idx').on(table.email).where(sql`${table.email} IS NOT NULL`)]);
 
 export const userSessions = pgTable('user_sessions', {
     id: uuid('id').primaryKey().defaultRandom(),

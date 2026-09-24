@@ -6,7 +6,9 @@
   "scripts": {
     "build": "pnpm -r run build",
     "typecheck": "pnpm --filter @bonitashare/shared-types run build && pnpm -r run typecheck",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "db:generate": "docker compose exec -w /app/apps/api api pnpm drizzle-kit generate",
+    "db:migrate": "docker compose exec -w /app/apps/api api pnpm drizzle-kit migrate"
   },
   "keywords": [],
   "author": "",
