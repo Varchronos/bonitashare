@@ -28,6 +28,10 @@ services:
       - "4321:4321"
     environment:
       NODE_ENV: development
+      API_INTERNAL_URL: http://api:3000
+    depends_on:
+      api:
+        condition: service_healthy
     volumes:
       - .:/app
       - /app/node_modules

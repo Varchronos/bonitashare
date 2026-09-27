@@ -16,4 +16,6 @@ services:
       dockerfile: apps/web/Dockerfile
       target: runtime
     ports:
-      - "8080:80"
+      - "8080:4321"
+    environment:
+      API_INTERNAL_URL: http://api:3000

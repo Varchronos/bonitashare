@@ -24,8 +24,16 @@ FROM deps AS build
 COPY . .
 RUN pnpm --filter web... run build
 
-FROM nginx:1.27-alpine AS runtime
-COPY --from=build /app/apps/web/dist /usr/share/nginx/html
-EXPOSE 80
+# SSR needs a live Node process (server render on every request), not a
+# static file server, so runtime is based on `base` with node_modules and
+# the built dist/ carried over, rather than nginx serving prebuilt HTML.
+FROM base AS runtime
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=4321
+COPY --from=build /app /app
+WORKDIR /app/apps/web
+EXPOSE 4321
 HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
-  CMD wget -q --spider http://localhost:80/ || exit 1
+  CMD node -e "fetch('http://localhost:4321/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+CMD ["node", "dist/server/entry.mjs"]

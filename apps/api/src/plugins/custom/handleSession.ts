@@ -69,6 +69,10 @@ async function issueSession(req: FastifyRequest, rep: FastifyReply) {
         sameSite: "lax",
         maxAge: SESSION_TTL_MS / 1000,
         path: "/",
+        // Unset locally (localhost already shares cookies across ports).
+        // In prod, set to the shared parent domain (e.g. ".example.com")
+        // so both the web app's SSR server and the API receive it.
+        domain: process.env.COOKIE_DOMAIN || undefined,
     });
 
     req.userId = user.id;
