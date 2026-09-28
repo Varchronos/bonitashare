@@ -1,0 +1,120 @@
+.uploader {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	width: 100%;
+}
+
+.dropzone {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	padding: 40px 16px;
+	border: 2px dashed var(--border);
+	border-radius: var(--radius);
+	background: var(--surface);
+	color: var(--muted);
+	text-align: center;
+	cursor: pointer;
+	transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone:hover,
+.dropzone:focus-visible,
+.dropzone.dragging {
+	border-color: var(--accent);
+	background: var(--accent-soft);
+	outline: none;
+}
+
+.dropzone[aria-disabled='true'] {
+	cursor: not-allowed;
+	opacity: 0.6;
+}
+
+.dropzone-title {
+	margin: 8px 0 0;
+	color: var(--text);
+	font-weight: 600;
+}
+
+.dropzone-hint {
+	margin: 0;
+	font-size: 0.9rem;
+}
+
+.file-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.file-list li {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 10px 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--surface);
+}
+
+.file-name {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.file-size {
+	color: var(--muted);
+	font-size: 0.85rem;
+}
+
+.remove {
+	border: none;
+	background: none;
+	color: var(--muted);
+	font-size: 1.25rem;
+	line-height: 1;
+	cursor: pointer;
+}
+
+.remove:hover:not(:disabled) {
+	color: var(--danger);
+}
+
+.progress {
+	height: 6px;
+	border-radius: 999px;
+	background: var(--border);
+	overflow: hidden;
+}
+
+.progress > div {
+	height: 100%;
+	background: var(--accent);
+	transition: width 0.1s;
+}
+
+.status {
+	margin: 0;
+	font-size: 0.9rem;
+}
+
+.status.success {
+	color: var(--success);
+}
+
+.status.error {
+	color: var(--danger);
+}
+
+.upload-btn {
+	align-self: flex-start;
+}

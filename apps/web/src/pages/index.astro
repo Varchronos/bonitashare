@@ -1,31 +1,140 @@
 ---
-import Welcome from '../components/Welcome.astro';
-import Layout from '../layouts/Layout.astro';
-import type { ApiResponse } from '@bonitashare/shared-types';
+import Layout from "../layouts/Layout.astro";
+import FileUpload from "../components/upload/FileUpload";
+import { getSession } from "../lib/session";
 
-// Server-to-server call during render, so the session is already resolved
-// by the time this page's HTML reaches the browser — no client-side fetch,
-// no CORS (this never touches the browser), no flash of unauthenticated UI.
-// Uses process.env (not import.meta.env) so it reads the container's
-// runtime env, not whatever was set at `astro build` time.
-const apiUrl = process.env.API_INTERNAL_URL;
-const incomingCookie = Astro.request.headers.get('cookie') ?? '';
+// Resolve (or mint) the session up front so the upload widget already has
+// a session cookie by the time it posts.
+await getSession(Astro);
 
-const res = await fetch(`${apiUrl}/session`, {
-	headers: { cookie: incomingCookie },
-});
-
-// The API may have just minted a fresh anonymous session (first-ever
-// visit) — forward its Set-Cookie(s) onto our own response so the
-// browser actually stores it.
-for (const cookie of res.headers.getSetCookie()) {
-	Astro.response.headers.append('set-cookie', cookie);
-}
-
-const { data: session } = (await res.json()) as ApiResponse<{ userId: string | null }>;
+const features = [
+	{
+		title: "Drag, drop, done",
+		body: "Upload any file straight from your browser — no install, no fuss.",
+	},
+	{
+		title: "No account needed",
+		body: "Start sharing right away. Sign up later to keep your files organised.",
+	},
+	{
+		title: "Share with a link",
+		body: "Every upload gets a link you can send to anyone.",
+	},
+];
 ---
 
 <Layout>
-	<Welcome />
-	<p>Session userId: {session?.userId ?? 'none'}</p>
+	<div class="home container">
+		<section class="hero">
+			<div class="hero-copy">
+				<h1>
+					Share files fast <span>thats it.</span>
+				</h1>
+				<p>literally thats it. Quick & easy.</p>
+				<div class="hero-actions">
+					<a href="/login" class="btn">Log in</a>
+					<span>to keep track of shared files.</span>
+				</div>
+			</div>
+			<div class="hero-upload">
+				<FileUpload client:load />
+			</div>
+		</section>
+
+		<section class="features">
+			{
+				features.map((f) => (
+					<article>
+						<h3>{f.title}</h3>
+						<p>{f.body}</p>
+					</article>
+				))
+			}
+		</section>
+	</div>
 </Layout>
+
+<style>
+	.home {
+		padding-top: 64px;
+		padding-bottom: 64px;
+	}
+
+	.hero {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 48px;
+		align-items: center;
+	}
+
+	.hero h1 {
+		margin: 0 0 16px;
+		font-size: clamp(2rem, 5vw, 3.25rem);
+		line-height: 1.1;
+		letter-spacing: -0.02em;
+	}
+
+	.hero h1 span {
+		color: var(--accent);
+	}
+
+	.hero-copy p {
+		margin: 0 0 24px;
+		color: var(--muted);
+		font-size: 1.1rem;
+		line-height: 1.6;
+	}
+
+	.hero-actions {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 12px;
+	}
+
+	.hero-actions span {
+		font-style: italic;
+		letter-spacing: 0.05rem;
+		color: var(--muted);
+	}
+
+	.features {
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 16px;
+		margin-top: 80px;
+	}
+
+	.features article {
+		padding: 20px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+	}
+
+	.features h3 {
+		margin: 0 0 8px;
+		font-size: 1rem;
+	}
+
+	.features p {
+		margin: 0;
+		color: var(--muted);
+		line-height: 1.5;
+	}
+
+	@media (max-width: 800px) {
+		.home {
+			padding-top: 32px;
+		}
+
+		.hero,
+		.features {
+			grid-template-columns: 1fr;
+		}
+
+		.features {
+			margin-top: 48px;
+		}
+	}
+</style>

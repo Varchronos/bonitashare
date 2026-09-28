@@ -1,0 +1,23 @@
+import type { AstroGlobal } from 'astro';
+import type { ApiResponse } from '@bonitashare/shared-types';
+
+// Server-to-server call during render, so the session is already resolved
+// by the time the page's HTML reaches the browser — no client-side fetch,
+// no CORS (this never touches the browser), no flash of unauthenticated UI.
+// Uses process.env (not import.meta.env) so it reads the container's
+// runtime env, not whatever was set at `astro build` time.
+export async function getSession(Astro: AstroGlobal) {
+	const res = await fetch(`${process.env.API_INTERNAL_URL}/session`, {
+		headers: { cookie: Astro.request.headers.get('cookie') ?? '' },
+	});
+
+	// The API may have just minted a fresh anonymous session (first-ever
+	// visit) — forward its Set-Cookie(s) onto our own response so the
+	// browser actually stores it.
+	for (const cookie of res.headers.getSetCookie()) {
+		Astro.response.headers.append('set-cookie', cookie);
+	}
+
+	const { data } = (await res.json()) as ApiResponse<{ userId: string | null }>;
+	return data;
+}
