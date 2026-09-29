@@ -23,6 +23,8 @@
   "packageManager": "pnpm@12.5.1",
   "type": "module",
   "devDependencies": {
+    "node-addon-api": "^8.9.2",
+    "node-gyp": "^13.0.2",
     "typescript": "catalog:"
   }
 }

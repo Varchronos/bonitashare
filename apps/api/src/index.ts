@@ -26,6 +26,13 @@ app.register(fastifyCookie, {
 
 app.register(handleSession)
 
+
+app.addContentTypeParser(
+  'application/offset+octet-stream',
+  (_request, _payload, done) => done(null)
+);
+
+
 app.register(autoload, {
   dir: path.join(__dirname, 'routes')
 })

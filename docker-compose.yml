@@ -1,5 +1,6 @@
 services:
   api:
+    image: bonitashare-api
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -12,6 +13,32 @@ services:
       postgres:
         condition: service_healthy
       storage:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/api/node_modules
+      - /app/packages/shared-types/node_modules
+
+  worker:
+    image: bonitashare-api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: dev
+    command: pnpm --filter api run worker
+    healthcheck:
+      disable: true
+    env_file:
+      - apps/api/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - .:/app
@@ -36,6 +63,21 @@ services:
       - .:/app
       - /app/node_modules
       - /app/apps/web/node_modules
+
+  redis:
+    image: redis:7-alpine
+    container_name: bonitashare-cache
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:6379:6379'
+    volumes:
+      - cache_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: [ 'CMD', 'redis-cli', 'ping' ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   storage:
     image: pgsty/silo:latest
@@ -74,3 +116,4 @@ services:
 volumes:
   postgres_data:
   storage_data:
+  cache_data:

@@ -1,5 +1,6 @@
 services:
   api:
+    image: bonitashare-api
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -9,6 +10,18 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+
+  worker:
+    image: bonitashare-api
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    command: node apps/api/dist/worker.js
+    healthcheck:
+      disable: true
+    environment:
+      NODE_ENV: production
 
   web:
     build:
