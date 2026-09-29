@@ -1,0 +1,107 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getFileLink } from '../lib/file';
+
+function formatBytes(bytes: number) {
+	if (bytes < 1024) return `${bytes} B`;
+	const units = ['KB', 'MB', 'GB'];
+	let value = bytes / 1024;
+	let i = 0;
+	while (value >= 1024 && i < units.length - 1) {
+		value /= 1024;
+		i++;
+	}
+	return `${value.toFixed(1)} ${units[i]}`;
+}
+
+const { id } = Astro.params;
+const { data: file, error } = await getFileLink(Astro, id!);
+
+if (!file) {
+	Astro.response.status = error?.code === 'FILE_EXPIRED' ? 410 : 404;
+}
+
+const isImage = file?.contentType?.startsWith('image/') ?? false;
+const isVideo = file?.contentType?.startsWith('video/') ?? false;
+const isAudio = file?.contentType?.startsWith('audio/') ?? false;
+---
+
+<Layout title={file?.filename ?? 'File not found'}>
+	<section class="container page">
+		{
+			file ? (
+				<>
+					<h1>{file.filename}</h1>
+					<p class="meta">
+						{formatBytes(file.sizeBytes)}
+						{file.contentType ? ` · ${file.contentType}` : ''}
+					</p>
+
+					<div class="preview">
+						{isImage && <img src={file.url} alt={file.filename} />}
+						{isVideo && <video src={file.url} controls />}
+						{isAudio && <audio src={file.url} controls />}
+						{!isImage && !isVideo && !isAudio && <p class="no-preview">No preview available for this file type.</p>}
+					</div>
+
+					<a class="btn btn-primary" href={file.url}>
+						Open file
+					</a>
+				</>
+			) : (
+				<>
+					<h1>{error?.code === 'FILE_EXPIRED' ? 'This link has expired' : 'File not found'}</h1>
+					<p class="meta">
+						{error?.code === 'FILE_EXPIRED'
+							? 'The file this link pointed to is no longer available.'
+							: "This link doesn't point to a file we have — check that you copied it correctly."}
+					</p>
+				</>
+			)
+		}
+	</section>
+</Layout>
+
+<style>
+	.page {
+		max-width: 640px;
+		padding-top: 48px;
+		padding-bottom: 48px;
+	}
+
+	h1 {
+		margin: 0 0 8px;
+		word-break: break-word;
+	}
+
+	.meta {
+		margin: 0 0 24px;
+		color: var(--muted);
+		font-size: 0.9rem;
+	}
+
+	.preview {
+		margin-bottom: 24px;
+	}
+
+	.preview img,
+	.preview video {
+		max-width: 100%;
+		border-radius: var(--radius);
+		display: block;
+	}
+
+	.preview audio {
+		width: 100%;
+	}
+
+	.no-preview {
+		margin: 0;
+		padding: 24px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+		color: var(--muted);
+		text-align: center;
+	}
+</style>

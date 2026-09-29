@@ -1,12 +1,16 @@
 import { useRef, useState, type DragEvent } from 'react';
-import type { ApiResponse } from '@bonitashare/shared-types';
+import * as tus from 'tus-js-client';
 import './FileUpload.css';
+
+type UploadedLink = { file: string; url: string };
 
 type Status =
 	| { kind: 'idle' }
 	| { kind: 'uploading'; progress: number }
-	| { kind: 'done' }
-	| { kind: 'error'; message: string };
+	| { kind: 'paused'; progress: number }
+	| { kind: 'cancelled' }
+	| { kind: 'done'; links: UploadedLink[] }
+	| { kind: 'error'; message: string; links: UploadedLink[] };
 
 function formatBytes(bytes: number) {
 	if (bytes < 1024) return `${bytes} B`;
@@ -20,29 +24,48 @@ function formatBytes(bytes: number) {
 	return `${value.toFixed(1)} ${units[i]}`;
 }
 
-// XHR instead of fetch: fetch still has no upload-progress events.
-function uploadFiles(files: File[], onProgress: (pct: number) => void) {
-	return new Promise<void>((resolve, reject) => {
-		const form = new FormData();
-		for (const file of files) form.append('file', file, file.name);
-
-		const xhr = new XMLHttpRequest();
-		xhr.open('POST', '/api/upload');
-		xhr.upload.onprogress = (e) => {
-			if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
-		};
-		xhr.onload = () => {
-			if (xhr.status >= 200 && xhr.status < 300) return resolve();
-			let message = `Upload failed (${xhr.status})`;
-			try {
-				const body = JSON.parse(xhr.responseText) as ApiResponse<unknown>;
-				if (body.error) message = body.error.message;
-			} catch {}
-			reject(new Error(message));
-		};
-		xhr.onerror = () => reject(new Error('Network error'));
-		xhr.send(form);
+// One resumable tus upload. Chunked (rather than sent in one shot) so a
+// dropped connection only costs the in-flight chunk — retryDelays then
+// resumes from the last accepted offset instead of restarting the file.
+function uploadOne(file: File, onBytesSent: (bytesUploaded: number) => void): Promise<string> {
+	return new Promise((resolve, reject) => {
+		const upload = new tus.Upload(file, {
+			endpoint: '/api/upload',
+			metadata: { filename: file.name, filetype: file.type },
+			chunkSize: 5 * 1024 * 1024,
+			retryDelays: [0, 1000, 3000, 5000],
+			onProgress: (bytesSent) => onBytesSent(bytesSent),
+			onError: (err) => reject(err),
+			onSuccess: () => {
+				const id = upload.url?.split('/').filter(Boolean).pop();
+				if (!id) {
+					reject(new Error('Upload finished without a resulting file id'));
+					return;
+				}
+				resolve(`${window.location.origin}/${id}`);
+			},
+		});
+		upload.start();
 	});
+}
+
+// Uploaded one at a time rather than in parallel, so a batch of files
+// doesn't fan out into N simultaneous connections through the proxy.
+async function uploadFiles(files: File[], onProgress: (pct: number) => void): Promise<UploadedLink[]> {
+	const totalBytes = files.reduce((sum, f) => sum + f.size, 0);
+	let bytesDoneBefore = 0;
+	const links: UploadedLink[] = [];
+
+	for (const file of files) {
+		const url = await uploadOne(file, (bytesSent) => {
+			const pct = totalBytes ? Math.round(((bytesDoneBefore + bytesSent) / totalBytes) * 100) : 100;
+			onProgress(pct);
+		});
+		bytesDoneBefore += file.size;
+		links.push({ file: file.name, url });
+	}
+
+	return links;
 }
 
 export default function FileUpload() {
@@ -68,11 +91,20 @@ export default function FileUpload() {
 	async function onUpload() {
 		setStatus({ kind: 'uploading', progress: 0 });
 		try {
-			await uploadFiles(files, (progress) => setStatus({ kind: 'uploading', progress }));
-			setStatus({ kind: 'done' });
+			const links = await uploadFiles(files, (progress) => setStatus({ kind: 'uploading', progress }));
+			setStatus({ kind: 'done', links });
 			setFiles([]);
 		} catch (err) {
-			setStatus({ kind: 'error', message: (err as Error).message });
+			setStatus({ kind: 'error', message: (err as Error).message, links: [] });
+		}
+	}
+
+	async function copyLink(url: string) {
+		try {
+			await navigator.clipboard.writeText(url);
+		} catch {
+			// Clipboard access can be denied (permissions, insecure context) —
+			// the link is still shown and selectable, so this is non-fatal.
 		}
 	}
 
@@ -140,7 +172,21 @@ export default function FileUpload() {
 				</div>
 			)}
 
-			{status.kind === 'done' && <p className="status success">Upload complete.</p>}
+			{status.kind === 'done' && (
+				<ul className="link-list">
+					{status.links.map((link) => (
+						<li key={link.url}>
+							<span className="link-name">{link.file}</span>
+							<a href={link.url} className="link-url">
+								{link.url}
+							</a>
+							<button type="button" className="copy" onClick={() => copyLink(link.url)}>
+								Copy
+							</button>
+						</li>
+					))}
+				</ul>
+			)}
 			{status.kind === 'error' && <p className="status error">{status.message}</p>}
 
 			<button type="button" className="btn btn-primary upload-btn" disabled={!files.length || uploading} onClick={onUpload}>

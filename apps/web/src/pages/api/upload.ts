@@ -1,21 +1,7 @@
 import type { APIRoute } from 'astro';
+import { proxyTus } from '../../lib/tusProxy';
 
-// The API is only reachable inside the docker network, so the browser posts
-// here and we stream the multipart body straight through to it.
-export const POST: APIRoute = async ({ request }) => {
-	const res = await fetch(`${process.env.API_INTERNAL_URL}/upload`, {
-		method: 'POST',
-		headers: {
-			'content-type': request.headers.get('content-type') ?? '',
-			cookie: request.headers.get('cookie') ?? '',
-		},
-		body: request.body,
-		// Required by Node's fetch when the body is a stream.
-		duplex: 'half',
-	} as RequestInit);
-
-	const headers = new Headers({ 'content-type': res.headers.get('content-type') ?? 'application/json' });
-	for (const cookie of res.headers.getSetCookie()) headers.append('set-cookie', cookie);
-
-	return new Response(res.body, { status: res.status, headers });
-};
+// The API is only reachable inside the docker network, so the browser talks
+// tus to us and we proxy every method through to it (see lib/tusProxy).
+export const POST: APIRoute = ({ request }) => proxyTus(request, '/upload');
+export const OPTIONS: APIRoute = ({ request }) => proxyTus(request, '/upload');
