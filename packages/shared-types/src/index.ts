@@ -19,3 +19,25 @@ export interface ApiFailure {
 }
 
 export type ApiResponse<T> = ApiSuccess<T> | ApiFailure;
+
+
+export enum FileStatus {
+  pending = 'pending',
+  uploading = 'uploading',
+  uploaded = 'uploaded',
+  failed = 'failed'
+}
+
+export type FileItem = {
+  id: string
+  ownerId: string | null
+  storageKey: string
+  thumbKey: string | null
+  filename: string
+  contentType: string
+  sizeBytes: number
+  isPublic: boolean
+  fileStatus: FileStatus
+  createdAt: Date
+  expiresAt: Date | null
+}

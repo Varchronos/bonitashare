@@ -3,6 +3,7 @@
 	flex-direction: column;
 	gap: 16px;
 	width: 100%;
+	min-width: 0;
 }
 
 .dropzone {
@@ -21,16 +22,10 @@
 }
 
 .dropzone:hover,
-.dropzone:focus-visible,
-.dropzone.dragging {
+.dropzone:focus-visible {
 	border-color: var(--accent);
 	background: var(--accent-soft);
 	outline: none;
-}
-
-.dropzone[aria-disabled='true'] {
-	cursor: not-allowed;
-	opacity: 0.6;
 }
 
 .dropzone-title {
@@ -44,23 +39,55 @@
 	font-size: 0.9rem;
 }
 
-.file-list {
+.task-list {
 	display: flex;
-	flex-direction: column;
+	flex-direction: column-reverse;
 	gap: 8px;
 	margin: 0;
 	padding: 0;
 	list-style: none;
 }
 
-.file-list li {
+.task-list li {
 	display: flex;
-	align-items: center;
-	gap: 12px;
-	padding: 10px 12px;
+	flex-direction: row;
+	gap: 16px;
+	padding: 12px;
 	border: 1px solid var(--border);
 	border-radius: 8px;
 	background: var(--surface);
+}
+
+.task-icon {
+	display: flex;
+	flex-shrink: 0;
+	justify-content: center;
+	align-items: center;
+	width: 40px;
+	height: 40px;
+	border-radius: 8px;
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+
+.task-icon-error {
+	background: var(--danger-soft);
+	color: var(--danger);
+}
+
+.task-wrapper {
+	flex: 1 1 0%;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+}
+
+.task-info {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
 }
 
 .file-name {
@@ -69,23 +96,28 @@
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+	color: var(--text);
+	font-weight: 500;
 }
 
-.file-size {
-	color: var(--muted);
-	font-size: 0.85rem;
+.task-actions {
+	display: flex;
+	flex-shrink: 0;
+	gap: 8px;
 }
 
-.remove {
+.icon-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
 	border: none;
 	background: none;
+	padding: 2px;
 	color: var(--muted);
-	font-size: 1.25rem;
-	line-height: 1;
 	cursor: pointer;
 }
 
-.remove:hover:not(:disabled) {
+.icon-btn:hover {
 	color: var(--danger);
 }
 
@@ -102,27 +134,22 @@
 	transition: width 0.1s;
 }
 
-.link-list {
-	display: flex;
-	flex-direction: column;
-	gap: 8px;
-	margin: 0;
-	padding: 0;
-	list-style: none;
+.progress-done > div {
+	background: var(--success);
 }
 
-.link-list li {
+.progress-error > div {
+	background: var(--danger);
+}
+
+.task-status-row {
 	display: flex;
 	align-items: center;
+	justify-content: space-between;
 	gap: 12px;
-	padding: 10px 12px;
-	border: 1px solid var(--border);
-	border-radius: 8px;
-	background: var(--surface);
 }
 
-.link-name {
-	flex: 1;
+.status-text {
 	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -131,7 +158,66 @@
 	font-size: 0.85rem;
 }
 
+.status-text-error {
+	color: var(--danger);
+}
+
+.status-text-success {
+	color: var(--success);
+}
+
+.status-pct {
+	flex-shrink: 0;
+	color: var(--muted);
+	font-size: 0.85rem;
+}
+
+.retry-btn {
+	display: flex;
+	flex-shrink: 0;
+	align-items: center;
+	gap: 4px;
+	border: none;
+	background: none;
+	color: var(--accent);
+	font: inherit;
+	font-size: 0.85rem;
+	font-weight: 500;
+	cursor: pointer;
+}
+
+.retry-btn:hover {
+	color: var(--accent-hover);
+}
+
+.tasks-show-more {
+	align-self: flex-start;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	border-radius: 6px;
+	padding: 6px 12px;
+	font-size: 0.85rem;
+	cursor: pointer;
+}
+
+.tasks-show-more:hover {
+	border-color: var(--accent);
+	color: var(--accent);
+}
+
+.link-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
 .link-url {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 	color: var(--accent);
 	font-size: 0.85rem;
 	text-decoration: none;
@@ -154,21 +240,4 @@
 .copy:hover {
 	border-color: var(--accent);
 	color: var(--accent);
-}
-
-.status {
-	margin: 0;
-	font-size: 0.9rem;
-}
-
-.status.success {
-	color: var(--success);
-}
-
-.status.error {
-	color: var(--danger);
-}
-
-.upload-btn {
-	align-self: flex-start;
 }

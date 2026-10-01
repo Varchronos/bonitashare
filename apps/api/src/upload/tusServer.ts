@@ -1,4 +1,4 @@
-import { Server } from '@tus/server';
+import { EVENTS, Server } from '@tus/server';
 import { S3Store } from '@tus/s3-store';
 import { nanoid } from 'nanoid';
 import { eq } from 'drizzle-orm';
@@ -6,8 +6,13 @@ import { db } from '@/db/client.js';
 import { files } from '@/db/schema.js';
 import { BUCKET } from '@/storage/client.js';
 import { fileProcessingQueue } from '@/queue/fileProcessing.js';
+import { redisConnection } from '@/queue/connection.js';
 
 const endpoint = new URL(process.env.S3_ENDPOINT!);
+
+function getUserId(req: { runtime?: { node?: { req: unknown } } }): string | null {
+    return (req.runtime?.node?.req as { userId?: string | null } | undefined)?.userId ?? null;
+}
 
 const datastore = new S3Store({
     partSize: 8 * 1024 * 1024,
@@ -37,7 +42,7 @@ export const tusServer = new Server({
             throw { status_code: 400, body: "Upload-Metadata must include 'filename'\n" };
         }
 
-        const userId = (req.runtime?.node?.req as { userId?: string | null } | undefined)?.userId ?? null;
+        const userId = getUserId(req);
 
         await db.insert(files).values({
             id: upload.id,
@@ -56,4 +61,13 @@ export const tusServer = new Server({
         await fileProcessingQueue.add('process-upload', { fileId: upload.id });
         return {};
     },
+    onIncomingRequest: async (req) => {
+        if (req.method === 'PATCH') {
+            // planning to do something here 
+        }
+    },
 });
+
+tusServer.on(EVENTS.POST_TERMINATE, (req, res, id) => {
+    // finish termination logic later
+})

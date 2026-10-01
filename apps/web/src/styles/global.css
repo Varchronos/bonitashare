@@ -8,6 +8,7 @@
 	--accent-hover: #5b21b6;
 	--accent-soft: #ede9fe;
 	--danger: #dc2626;
+	--danger-soft: #fee2e2;
 	--success: #16a34a;
 	--radius: 12px;
 	font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -24,6 +25,7 @@
 		--accent: #8b5cf6;
 		--accent-hover: #a78bfa;
 		--accent-soft: #2e1065;
+		--danger-soft: #450a0a;
 	}
 }
 
