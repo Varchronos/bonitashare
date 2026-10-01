@@ -17,7 +17,7 @@ FROM deps AS dev
 COPY . .
 EXPOSE 4321
 HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
-  CMD node -e "fetch('http://localhost:4321/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD node -e "fetch('http://localhost:4321/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["pnpm", "--filter", "web", "run", "dev", "--host"]
 
 FROM deps AS build
@@ -35,5 +35,5 @@ COPY --from=build /app /app
 WORKDIR /app/apps/web
 EXPOSE 4321
 HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
-  CMD node -e "fetch('http://localhost:4321/').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+  CMD node -e "fetch('http://localhost:4321/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 CMD ["node", "dist/server/entry.mjs"]

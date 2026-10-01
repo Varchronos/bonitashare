@@ -14,6 +14,11 @@ declare module "fastify" {
         // this to reply.raw themselves instead.
         pendingSetCookie: string | null;
     }
+
+    interface FastifyContextConfig {
+        // Opt a route out of session lookup/issuing (e.g. healthchecks).
+        skipSession?: boolean;
+    }
 }
 
 const SESSION_COOKIE = "session";
@@ -24,6 +29,8 @@ const handleSession: FastifyPluginAsync = async (fastify) => {
     fastify.decorateRequest("pendingSetCookie", null);
 
     fastify.addHook("onRequest", async (req, rep) => {
+        if (req.routeOptions.config.skipSession) return;
+
         const rawCookie = req.cookies[SESSION_COOKIE];
         let rawToken: string | null = null;
 

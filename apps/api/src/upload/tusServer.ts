@@ -69,5 +69,5 @@ export const tusServer = new Server({
 });
 
 tusServer.on(EVENTS.POST_TERMINATE, (req, res, id) => {
-    // finish termination logic later
+    
 })

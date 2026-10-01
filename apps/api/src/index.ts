@@ -12,10 +12,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = Fastify({ logger: true });
 
-// Declared before fastifyCookie/handleSession are registered, so it's
-// outside the session hook's chain on purpose. the Docker healthcheck
-// polls this every 5s and must not spawn an anonymous session each time.
-app.get("/health", async (): Promise<ApiResponse<{ status: "ok" }>> => {
+// The Docker healthcheck polls this every 5s and must not spawn an anonymous
+// session each time. Declaration order doesn't exempt it — handleSession's
+// onRequest hook is applied to every route at ready time — so it opts out
+// via skipSession.
+app.get("/health", { config: { skipSession: true } }, async (): Promise<ApiResponse<{ status: "ok" }>> => {
   return { data: { status: "ok" }, error: null };
 });
 
