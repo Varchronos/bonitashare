@@ -6,7 +6,6 @@ import { db } from '@/db/client.js';
 import { files } from '@/db/schema.js';
 import { BUCKET } from '@/storage/client.js';
 import { fileProcessingQueue } from '@/queue/fileProcessing.js';
-import { redisConnection } from '@/queue/connection.js';
 
 const endpoint = new URL(process.env.S3_ENDPOINT!);
 
@@ -28,11 +27,23 @@ const datastore = new S3Store({
     },
 });
 
+// S3Store uses the tus upload id verbatim as the object key, so the prefix lives in the id.
+// Upload URLs and files.id carry only the bare share id; the prefix is added back on the way in.
+const UPLOAD_KEY_PREFIX = 'uploads/';
+
+const toShareId = (uploadId: string) => uploadId.slice(UPLOAD_KEY_PREFIX.length);
+
 export const tusServer = new Server({
     path: '/upload',
     datastore,
-    // Reused as the files.id (share link id) and storageKey — one id, no separate mapping.
-    namingFunction: () => nanoid(10),
+    // uploads/<share id> — the share id doubles as files.id, the full id as storageKey.
+    namingFunction: () => `${UPLOAD_KEY_PREFIX}${nanoid(10)}`,
+    generateUrl: (_req, { proto, host, path, id }) => `${proto}://${host}${path}/${toShareId(id)}`,
+    getFileIdFromRequest: (_req, lastPath) => {
+        // Mirrors tus's default guards, which a custom extractor bypasses.
+        if (!lastPath || lastPath === 'upload' || /[\\\0]/.test(lastPath)) return undefined;
+        return `${UPLOAD_KEY_PREFIX}${lastPath}`;
+    },
     onUploadCreate: async (req, upload) => {
         if (!upload.size) {
             throw { status_code: 400, body: 'Upload-Length header is required\n' };
@@ -45,7 +56,7 @@ export const tusServer = new Server({
         const userId = getUserId(req);
 
         await db.insert(files).values({
-            id: upload.id,
+            id: toShareId(upload.id),
             ownerId: userId,
             storageKey: upload.id,
             filename,
@@ -57,17 +68,32 @@ export const tusServer = new Server({
         return {};
     },
     onUploadFinish: async (_req, upload) => {
-        await db.update(files).set({ fileStatus: 'uploaded' }).where(eq(files.id, upload.id));
-        await fileProcessingQueue.add('process-upload', { fileId: upload.id });
+        const fileId = toShareId(upload.id);
+        await db.update(files).set({ fileStatus: 'uploaded' }).where(eq(files.id, fileId));
+        // TODO: roll back if the enqueue fails — the row is already 'uploaded' and would never get processed.
+        // A stable jobId makes BullMQ ignore a duplicate add for the same file. Prefixed because
+        // BullMQ rejects purely numeric custom ids, which a nanoid can (rarely) be.
+        await fileProcessingQueue.add('process-upload', { fileId }, { jobId: `process-upload-${fileId}` });
         return {};
     },
-    onIncomingRequest: async (req) => {
-        if (req.method === 'PATCH') {
-            // planning to do something here 
+    // prevent tusServer from deleting finished files, this will be handled with a separate route which also cleans up other associated process like thumbs/previews
+    disableTerminationForFinishedUploads: true,
+    // Runs before HEAD/PATCH/DELETE touch storage. POST_TERMINATE fires only after the S3 delete.
+    onIncomingRequest: async (req, id) => {
+        // tus also calls this for POST with the freshly generated id, before onUploadCreate inserts the row.
+        if (req.method === 'POST') return;
+
+        const [file] = await db.select({ ownerId: files.ownerId }).from(files).where(eq(files.id, toShareId(id)));
+        if (!file) {
+            throw { status_code: 404, body: 'Upload not found\n' };
+        }
+        const userId = getUserId(req);
+        if (!userId || file.ownerId !== userId) {
+            throw { status_code: 403, body: 'You are not the owner of this upload\n' };
         }
     },
 });
 
 tusServer.on(EVENTS.POST_TERMINATE, async (_req, _res, id) => {
-    await db.delete(files).where(eq(files.id, id))
+    await db.delete(files).where(eq(files.id, toShareId(id)))
 })
