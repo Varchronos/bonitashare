@@ -3,12 +3,14 @@ import type { ApiResponse } from '@bonitashare/shared-types';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { files } from '@/db/schema.js';
-import { publicStorage, BUCKET } from '@/storage/client.js';
+import { publicStorage, BUCKET, thumbUrl } from '@/storage/client.js';
 
 const URL_EXPIRY_SECONDS = 60 * 60;
 
 type FileLink = {
     url: string;
+    // Null until the worker has made one, or for files that don't get thumbnails.
+    thumbnailUrl: string | null;
     filename: string;
     contentType: string | null;
     sizeBytes: number;
@@ -37,6 +39,7 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
         return {
             data: {
                 url,
+                thumbnailUrl: file.thumbKey ? thumbUrl(file.thumbKey) : null,
                 filename: file.filename,
                 contentType: file.contentType,
                 sizeBytes: file.sizeBytes,

@@ -1,5 +1,6 @@
+import { useEffect, useState } from 'react';
 import { useUploadStore, type UploadTask } from '../../store/file-store';
-import { pauseUpload, resumeUpload, cancelUpload } from '../../lib/upload-task';
+import { pauseUpload, resumeUpload, cancelUpload, shareIdFor, watchThumbnail } from '../../lib/upload-task';
 import { FileIcon, TrashIcon, CheckIcon, PauseIcon, PlayIcon, RetryIcon } from './icons';
 
 function formatBytes(bytes: number) {
@@ -14,10 +15,8 @@ function formatBytes(bytes: number) {
 	return `${value.toFixed(1)} ${units[i]}`;
 }
 
-// The share link id only exists once tus has created the upload — derive it
-// from the resource URL rather than tracking it separately.
 function linkFor(task: UploadTask) {
-	const id = task.tusUploadUrl.split('/').filter(Boolean).pop();
+	const id = shareIdFor(task);
 	return id ? `${window.location.origin}/${id}` : null;
 }
 
@@ -35,6 +34,19 @@ export default function TaskRow({ id }: { id: string }) {
 	// only replaces the matching element, so unrelated rows keep the same
 	// reference and never re-render when this one's progress changes.
 	const task = useUploadStore((s) => s.files.find((f) => f.id === id));
+
+	// Only images get thumbnails, so other types never poll.
+	const awaitingThumbnail = task?.status === 'done' && !task.thumbnailUrl && task.contentType.startsWith('image/');
+	useEffect(() => {
+		if (!awaitingThumbnail) return;
+		const controller = new AbortController();
+		watchThumbnail(id, controller.signal);
+		return () => controller.abort();
+	}, [id, awaitingThumbnail]);
+
+	// Falls back to the file icon if the thumbnail URL stops resolving.
+	const [thumbnailFailed, setThumbnailFailed] = useState(false);
+
 	if (!task) return null;
 
 	const isDone = task.status === 'done';
@@ -45,7 +57,11 @@ export default function TaskRow({ id }: { id: string }) {
 	return (
 		<li>
 			<div className={`task-icon${isError ? ' task-icon-error' : ''}`}>
-				<FileIcon />
+				{task.thumbnailUrl && !thumbnailFailed ? (
+					<img className="task-thumb" src={task.thumbnailUrl} alt="" onError={() => setThumbnailFailed(true)} />
+				) : (
+					<FileIcon />
+				)}
 			</div>
 			<div className="task-wrapper">
 				<div className="task-info">

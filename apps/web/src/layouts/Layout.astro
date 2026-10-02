@@ -4,9 +4,11 @@ import '../styles/global.css';
 
 interface Props {
 	title?: string;
+	// Absolute URL; left out entirely when absent so unfurlers don't get an empty image.
+	ogImage?: string | null;
 }
 
-const { title } = Astro.props;
+const { title, ogImage } = Astro.props;
 ---
 
 <!doctype html>
@@ -18,6 +20,7 @@ const { title } = Astro.props;
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="generator" content={Astro.generator} />
 		<title>{title ? `${title} · bonitashare` : 'bonitashare'}</title>
+		{ogImage && <meta property="og:image" content={ogImage} />}
 	</head>
 	<body>
 		<Navbar />

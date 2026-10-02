@@ -3,7 +3,7 @@ import { S3Store } from '@tus/s3-store';
 import { nanoid } from 'nanoid';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { files } from '@/db/schema.js';
+import { files, users } from '@/db/schema.js';
 import { BUCKET } from '@/storage/client.js';
 import { fileProcessingQueue } from '@/queue/fileProcessing.js';
 
@@ -32,6 +32,20 @@ const datastore = new S3Store({
 const UPLOAD_KEY_PREFIX = 'uploads/';
 
 const toShareId = (uploadId: string) => uploadId.slice(UPLOAD_KEY_PREFIX.length);
+
+// Uploads by anonymous users (no email) expire; account holders' uploads don't.
+const ANONYMOUS_UPLOAD_TTL_DAYS = Number(process.env.ANONYMOUS_UPLOAD_TTL_DAYS);
+if (!Number.isFinite(ANONYMOUS_UPLOAD_TTL_DAYS) || ANONYMOUS_UPLOAD_TTL_DAYS <= 0) {
+    throw new Error('ANONYMOUS_UPLOAD_TTL_DAYS must be a positive number of days');
+}
+
+async function expiryFor(userId: string | null): Promise<Date | null> {
+    if (userId) {
+        const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+        if (user?.email) return null;
+    }
+    return new Date(Date.now() + ANONYMOUS_UPLOAD_TTL_DAYS * 24 * 60 * 60 * 1000);
+}
 
 export const tusServer = new Server({
     path: '/upload',
@@ -63,6 +77,7 @@ export const tusServer = new Server({
             contentType: upload.metadata?.filetype ?? null,
             sizeBytes: upload.size,
             fileStatus: 'uploading',
+            expiresAt: await expiryFor(userId),
         });
 
         return {};

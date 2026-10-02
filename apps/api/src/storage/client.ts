@@ -30,9 +30,32 @@ export const publicStorage = new Client({
 
 export const BUCKET = process.env.S3_BUCKET!;
 
+// Anonymous-read bucket so thumbnails are served straight to browsers (and CDNs) without presigning.
+export const THUMB_BUCKET = process.env.S3_THUMB_BUCKET!;
+
+// Where browsers fetch thumbnails from. Defaults to path-style on the public S3 endpoint; point it at
+// a CDN or R2 custom domain in prod.
+const THUMB_PUBLIC_BASE_URL = (process.env.THUMB_PUBLIC_BASE_URL || `${publicEndpoint.origin}/${THUMB_BUCKET}`).replace(/\/$/, '');
+
+export const thumbUrl = (thumbKey: string) => `${THUMB_PUBLIC_BASE_URL}/${thumbKey}`;
+
+// GetObject only, no ListBucket, so keys can't be enumerated.
+const publicReadPolicy = (bucket: string) =>
+    JSON.stringify({
+        Version: '2012-10-17',
+        Statement: [{ Effect: 'Allow', Principal: { AWS: ['*'] }, Action: ['s3:GetObject'], Resource: [`arn:aws:s3:::${bucket}/*`] }],
+    });
+
 export async function ensureBucket() {
     const exists = await storage.bucketExists(BUCKET);
     if (!exists) {
         await storage.makeBucket(BUCKET, process.env.S3_REGION);
+    }
+
+    // The public policy is applied only when this creates the bucket. A pre-provisioned one (prod) is
+    // left alone, since public access is configured differently per provider (R2 has no bucket policies).
+    if (!(await storage.bucketExists(THUMB_BUCKET))) {
+        await storage.makeBucket(THUMB_BUCKET, process.env.S3_REGION);
+        await storage.setBucketPolicy(THUMB_BUCKET, publicReadPolicy(THUMB_BUCKET));
     }
 }

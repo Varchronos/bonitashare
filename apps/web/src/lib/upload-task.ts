@@ -1,4 +1,5 @@
 import * as tus from 'tus-js-client'
+import type { ApiResponse } from '@bonitashare/shared-types'
 import { useUploadStore } from '../store/file-store'
 
 export class UploadQueue {
@@ -156,6 +157,40 @@ export function resumeUpload(id: string) {
     if (!upload) return
     useUploadStore.getState().updateFile(id, { status: 'queued', errorMessage: null })
     queue.add(upload)
+}
+
+// The share link id only exists once tus has created the upload — derive it
+// from the resource URL rather than tracking it separately.
+export function shareIdFor(task: { tusUploadUrl: string }) {
+    return task.tusUploadUrl.split('/').filter(Boolean).pop() ?? null
+}
+
+// The worker makes thumbnails shortly after an upload finishes, so check a few
+// times with backoff, then give up quietly — the row keeps its file icon, and
+// the next page load tries again.
+const THUMBNAIL_POLL_DELAYS_MS = [1000, 2000, 4000, 8000]
+
+export async function watchThumbnail(id: string, signal: AbortSignal) {
+    const task = useUploadStore.getState().files.find((f) => f.id === id)
+    const shareId = task && shareIdFor(task)
+    if (!shareId) return
+
+    for (const delay of THUMBNAIL_POLL_DELAYS_MS) {
+        await new Promise((resolve) => setTimeout(resolve, delay))
+        if (signal.aborted) return
+        try {
+            const res = await fetch(`/api/thumbnail/${shareId}`, { signal })
+            // 404/410: the file is gone or not visible to us; polling won't change that.
+            if (!res.ok) return
+            const { data } = (await res.json()) as ApiResponse<{ thumbnailUrl: string | null }>
+            if (data?.thumbnailUrl) {
+                useUploadStore.getState().updateFile(id, { thumbnailUrl: data.thumbnailUrl })
+                return
+            }
+        } catch {
+            if (signal.aborted) return
+        }
+    }
 }
 
 export function cancelUpload(id: string) {

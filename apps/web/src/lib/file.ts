@@ -4,6 +4,7 @@ import { refreshSession } from './session';
 
 export type FileLink = {
 	url: string;
+	thumbnailUrl: string | null;
 	filename: string;
 	contentType: string | null;
 	sizeBytes: number;

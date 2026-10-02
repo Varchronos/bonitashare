@@ -7,6 +7,9 @@ import { create } from "zustand/react";
 export type UploadTaskStatus = 'queued' | 'uploading' | 'paused' | 'cancelled' | 'done' | 'error'
 export type UploadTask = Omit<FileItem, 'fileStatus'> & {
     tusUploadUrl: string;
+    // Filled in after the upload, once the worker has made one. Optional because tasks persisted
+    // before this field existed won't have it.
+    thumbnailUrl?: string | null;
     bytesUploaded: number;
     status: UploadTaskStatus,
     errorMessage: string | null

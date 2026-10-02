@@ -5,7 +5,8 @@ import sharp from 'sharp';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { files } from '@/db/schema.js';
-import { storage, BUCKET } from '@/storage/client.js';
+import { nanoid } from 'nanoid';
+import { storage, BUCKET, THUMB_BUCKET } from '@/storage/client.js';
 import { redisConnection } from '@/queue/connection.js';
 import { FILE_PROCESSING_QUEUE, type ProcessUploadJob } from '@/queue/fileProcessing.js';
 
@@ -48,8 +49,13 @@ async function generateThumbnail(fileId: string, storageKey: string) {
         throw err;
     }
 
-    const thumbKey = `thumb/${fileId}.webp`;
-    await storage.putObject(BUCKET, thumbKey, thumbnail, thumbnail.length, { 'Content-Type': 'image/webp' });
+    // Random rather than the share id: the thumb bucket is public, so the key must not be derivable
+    // from a link to a private file. A fresh key per thumbnail also makes it safe to cache forever.
+    const thumbKey = `${nanoid(21)}.webp`;
+    await storage.putObject(THUMB_BUCKET, thumbKey, thumbnail, thumbnail.length, {
+        'Content-Type': 'image/webp',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+    });
     await db.update(files).set({ thumbKey }).where(eq(files.id, fileId));
 }
 
