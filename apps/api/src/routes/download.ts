@@ -15,6 +15,9 @@ type FileLink = {
 };
 
 const downloadRoutes: FastifyPluginAsync = async (fastify) => {
+    // Public, but owners can also fetch their own private files.
+    fastify.addHook('onRequest', fastify.optionalSession);
+
     fastify.get<{ Params: { id: string } }>('/download/:id', async (req, reply): Promise<ApiResponse<FileLink>> => {
         const [file] = await db.select().from(files).where(eq(files.id, req.params.id));
 

@@ -12,11 +12,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = Fastify({ logger: true });
 
-// The Docker healthcheck polls this every 5s and must not spawn an anonymous
-// session each time. Declaration order doesn't exempt it — handleSession's
-// onRequest hook is applied to every route at ready time — so it opts out
-// via skipSession.
-app.get("/health", { config: { skipSession: true } }, async (): Promise<ApiResponse<{ status: "ok" }>> => {
+// Public and session-free. Sessions are only ever issued by GET /session;
+// other routes opt into requireSession/optionalSession themselves.
+app.get("/health", async (): Promise<ApiResponse<{ status: "ok" }>> => {
   return { data: { status: "ok" }, error: null };
 });
 

@@ -71,6 +71,14 @@ export class UploadQueue {
 const queue = new UploadQueue(3)
 const liveUploads = new Map<string, tus.Upload>()
 
+// Shared across all active uploads so a burst of 401s triggers one renewal.
+let sessionRenewal: Promise<unknown> | null = null
+
+function renewSession() {
+    sessionRenewal ??= fetch('/api/session').finally(() => { sessionRenewal = null })
+    return sessionRenewal
+}
+
 function shouldRetryUpload(err: tus.DetailedError) {
     // tus-js-client's default policy treats every 4xx (except 409/423) as
     // non-retryable — that excludes 429, which is exactly the error our own
@@ -78,7 +86,15 @@ function shouldRetryUpload(err: tus.DetailedError) {
     // of backing off and retrying.
     const status = err.originalResponse?.getStatus() ?? 0
     const online = typeof navigator === 'undefined' || navigator.onLine
-    return online && (status < 400 || status >= 500 || status === 409 || status === 423 || status === 429)
+    if (!online) return false
+
+    // Session expired: GET /session reissues it for the same user, then the
+    // retry (gated in onBeforeRequest) goes out with the new cookie.
+    if (status === 401) {
+        renewSession()
+        return true
+    }
+    return status < 400 || status >= 500 || status === 409 || status === 423 || status === 429
 }
 
 export function enqueueFile(file: File): string {
@@ -91,6 +107,7 @@ export function enqueueFile(file: File): string {
         chunkSize: 5 * 1024 * 1024,
         retryDelays: [0, 1000, 3000, 5000],
         onShouldRetry: shouldRetryUpload,
+        onBeforeRequest: async () => { await sessionRenewal },
         // Reused as the share-link id once the upload completes — see
         // linkFor() in TaskRow.
         onUploadUrlAvailable: () => updateFile(id, { tusUploadUrl: upload.url ?? '' }),

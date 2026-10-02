@@ -68,6 +68,6 @@ export const tusServer = new Server({
     },
 });
 
-tusServer.on(EVENTS.POST_TERMINATE, (req, res, id) => {
-    
+tusServer.on(EVENTS.POST_TERMINATE, async (_req, _res, id) => {
+    await db.delete(files).where(eq(files.id, id))
 })

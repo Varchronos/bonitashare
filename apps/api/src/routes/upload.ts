@@ -8,13 +8,6 @@ async function handleTus(req: FastifyRequest, reply: FastifyReply) {
     // tus only ever sees the raw Node req, not the Fastify request.
     (req.raw as unknown as { userId: string | null }).userId = req.userId;
 
-    // hijack() skips Fastify's onSend pipeline entirely, which is what
-    // would normally flush a newly-issued session cookie — apply it to the
-    // raw response ourselves first.
-    if (req.pendingSetCookie) {
-        reply.raw.setHeader('set-cookie', req.pendingSetCookie);
-    }
-
     reply.hijack();
     try {
         await tusServer.handle(req.raw, reply.raw);
@@ -24,6 +17,10 @@ async function handleTus(req: FastifyRequest, reply: FastifyReply) {
 }
 
 const uploadRoutes: FastifyPluginAsync = async (fastify) => {
+    // Scoped to this plugin's routes only. Runs before hijack(), so a 401
+    // goes out through Fastify's normal reply path.
+    fastify.addHook('onRequest', fastify.requireSession);
+
     fastify.route({ method: TUS_METHODS, url: '/upload', handler: handleTus });
     fastify.route({ method: TUS_METHODS, url: '/upload/*', handler: handleTus });
 };
