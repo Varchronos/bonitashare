@@ -1,0 +1,32 @@
+---
+import Layout from '../layouts/Layout.astro';
+import FileUpload from '../components/upload/FileUpload';
+import { getSession } from '../lib/session';
+
+await getSession(Astro);
+---
+
+<Layout title="Upload">
+	<section class="container page">
+		<h1>Upload files</h1>
+		<p>Drop in anything you want to share. You'll get a link once it's uploaded.</p>
+		<FileUpload client:load />
+	</section>
+</Layout>
+
+<style>
+	.page {
+		max-width: 640px;
+		padding-top: 48px;
+		padding-bottom: 48px;
+	}
+
+	h1 {
+		margin: 0 0 8px;
+	}
+
+	p {
+		margin: 0 0 24px;
+		color: var(--muted);
+	}
+</style>

@@ -12,9 +12,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = Fastify({ logger: true });
 
-// Declared before fastifyCookie/handleSession are registered, so it's
-// outside the session hook's chain on purpose. the Docker healthcheck
-// polls this every 5s and must not spawn an anonymous session each time.
+// Public and session-free. Sessions are only ever issued by GET /session;
+// other routes opt into requireSession/optionalSession themselves.
 app.get("/health", async (): Promise<ApiResponse<{ status: "ok" }>> => {
   return { data: { status: "ok" }, error: null };
 });
@@ -25,6 +24,13 @@ app.register(fastifyCookie, {
 })
 
 app.register(handleSession)
+
+
+app.addContentTypeParser(
+  'application/offset+octet-stream',
+  (_request, _payload, done) => done(null)
+);
+
 
 app.register(autoload, {
   dir: path.join(__dirname, 'routes')

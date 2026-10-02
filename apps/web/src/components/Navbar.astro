@@ -1,0 +1,104 @@
+---
+import logo from '../assets/logo.svg';
+
+const links = [
+	{ href: '/', label: 'Home' },
+	{ href: '/upload', label: 'Upload' },
+	{ href: '/login', label: 'Login' },
+];
+
+const path = Astro.url.pathname.replace(/\/$/, '') || '/';
+---
+
+<header class="navbar">
+	<nav class="container">
+		<a href="/" class="brand" aria-label="bonitashare home">
+			<img src={logo.src} alt="" width="28" height="28" />
+			<span>bonitashare</span>
+		</a>
+
+		<ul>
+			{
+				links.map(({ href, label }) => (
+					<li>
+						<a href={href} aria-current={path === href ? 'page' : undefined}>
+							{label}
+						</a>
+					</li>
+				))
+			}
+			<li>
+				<a href="/signup" class="btn btn-primary" aria-current={path === '/signup' ? 'page' : undefined}>
+					Sign up
+				</a>
+			</li>
+		</ul>
+	</nav>
+</header>
+
+<style>
+	.navbar {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+		background: color-mix(in srgb, var(--bg) 85%, transparent);
+		backdrop-filter: blur(8px);
+		border-bottom: 1px solid var(--border);
+	}
+
+	nav {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 16px;
+		height: 64px;
+	}
+
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		font-weight: 700;
+		font-size: 1.15rem;
+		text-decoration: none;
+	}
+
+	ul {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	ul a:not(.btn) {
+		display: block;
+		padding: 8px 12px;
+		border-radius: 8px;
+		color: var(--muted);
+		text-decoration: none;
+		font-weight: 500;
+	}
+
+	ul a:not(.btn):hover,
+	ul a[aria-current='page']:not(.btn) {
+		color: var(--text);
+		background: var(--accent-soft);
+	}
+
+	ul .btn {
+		padding: 8px 14px;
+		margin-left: 4px;
+	}
+
+	@media (max-width: 480px) {
+		.brand span {
+			display: none;
+		}
+
+		ul a:not(.btn) {
+			padding: 8px;
+		}
+	}
+</style>

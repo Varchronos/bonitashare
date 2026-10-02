@@ -21,11 +21,12 @@ export const files = pgTable('files', {
     id: text('id').primaryKey(), // short random link id, generated in app code
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
     storageKey: text('storage_key').notNull(), // key inside MinIO/S3 bucket
-    thumbKey: text('thumb_key'), // key of generated thumbnail; null until generated (or if not applicable)
+    thumbKey: text('thumb_key'), // key of generated thumbnail (either thumb or video preview); null until generated (or if not applicable)
     filename: text('filename').notNull(),
     contentType: text('content_type'),
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     isPublic: boolean('is_public').notNull().default(true),
+    fileStatus: text('file_status', { enum: ['pending', 'uploading', 'uploaded', 'failed'] }).notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true })
 }, (table) => [

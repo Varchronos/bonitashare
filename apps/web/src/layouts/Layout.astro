@@ -1,3 +1,16 @@
+---
+import Navbar from '../components/Navbar.astro';
+import '../styles/global.css';
+
+interface Props {
+	title?: string;
+	// Absolute URL; left out entirely when absent so unfurlers don't get an empty image.
+	ogImage?: string | null;
+}
+
+const { title, ogImage } = Astro.props;
+---
+
 <!doctype html>
 <html lang="en">
 	<head>
@@ -6,18 +19,13 @@
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="generator" content={Astro.generator} />
-		<title>Astro Basics</title>
+		<title>{title ? `${title} · bonitashare` : 'bonitashare'}</title>
+		{ogImage && <meta property="og:image" content={ogImage} />}
 	</head>
 	<body>
-		<slot />
+		<Navbar />
+		<main>
+			<slot />
+		</main>
 	</body>
 </html>
-
-<style>
-	html,
-	body {
-		margin: 0;
-		width: 100%;
-		height: 100%;
-	}
-</style>
