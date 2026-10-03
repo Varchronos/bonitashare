@@ -6,6 +6,8 @@ import { db } from '@/db/client.js';
 import { files, users } from '@/db/schema.js';
 import { BUCKET } from '@/storage/client.js';
 import { fileProcessingQueue } from '@/queue/fileProcessing.js';
+import { Redis } from 'ioredis';
+import { RedisLocker } from './redisLocker.js';
 
 const endpoint = new URL(process.env.S3_ENDPOINT!);
 
@@ -26,6 +28,11 @@ const datastore = new S3Store({
         },
     },
 });
+
+// Separate from the BullMQ connection: lock calls should fail fast, not retry forever.
+// The subscriber needs its own connection because subscriber mode blocks other commands.
+const lockRedis = new Redis(process.env.REDIS_URL!, { maxRetriesPerRequest: 2 });
+const lockSubscriber = new Redis(process.env.REDIS_URL!);
 
 // S3Store uses the tus upload id verbatim as the object key, so the prefix lives in the id.
 // Upload URLs and files.id carry only the bare share id; the prefix is added back on the way in.
@@ -50,6 +57,8 @@ async function expiryFor(userId: string | null): Promise<Date | null> {
 export const tusServer = new Server({
     path: '/upload',
     datastore,
+    // Shared across replicas so a retried PATCH on another replica can't write alongside the original.
+    locker: new RedisLocker(lockRedis, lockSubscriber),
     // uploads/<share id> — the share id doubles as files.id, the full id as storageKey.
     namingFunction: () => `${UPLOAD_KEY_PREFIX}${nanoid(10)}`,
     generateUrl: (_req, { proto, host, path, id }) => `${proto}://${host}${path}/${toShareId(id)}`,
