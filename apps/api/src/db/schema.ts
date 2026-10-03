@@ -27,10 +27,17 @@ export const files = pgTable('files', {
     sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
     isPublic: boolean('is_public').notNull().default(true),
     fileStatus: text('file_status', { enum: ['pending', 'uploading', 'uploaded', 'failed'] }).notNull().default('pending'),
+    // When the last byte landed — createdAt is when the upload started, which can be hours earlier.
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true }),
+    // Post-upload work (thumbnails etc.), kept apart from fileStatus: a failed thumbnail doesn't make the file unservable.
+    processingStatus: text('processing_status', { enum: ['pending', 'done', 'failed'] }).notNull().default('pending'),
+    processingError: text('processing_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     expiresAt: timestamp('expires_at', { withTimezone: true })
 }, (table) => [
     index('files_expires_at_idx').on(table.expiresAt).where(sql`${table.expiresAt} IS NOT NULL`),
+    // Backs the reconcile sweep, which only ever looks for uploaded files still awaiting processing.
+    index('files_unprocessed_idx').on(table.uploadedAt).where(sql`${table.fileStatus} = 'uploaded' AND ${table.processingStatus} = 'pending'`),
 ]);
 
 export const albums = pgTable('albums', {

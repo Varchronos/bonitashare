@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { files, users } from '@/db/schema.js';
 import { BUCKET } from '@/storage/client.js';
-import { fileProcessingQueue } from '@/queue/fileProcessing.js';
+import { fileProcessingQueue, PROCESS_UPLOAD_JOB, processUploadJobId } from '@/queue/fileProcessing.js';
 import { Redis } from 'ioredis';
 import { RedisLocker } from './redisLocker.js';
 import { ExpiringRedisKvStore } from './redisKvStore.js';
@@ -99,11 +99,14 @@ export const tusServer = new Server({
     },
     onUploadFinish: async (_req, upload) => {
         const fileId = toShareId(upload.id);
-        await db.update(files).set({ fileStatus: 'uploaded' }).where(eq(files.id, fileId));
-        // TODO: roll back if the enqueue fails — the row is already 'uploaded' and would never get processed.
-        // A stable jobId makes BullMQ ignore a duplicate add for the same file. Prefixed because
-        // BullMQ rejects purely numeric custom ids, which a nanoid can (rarely) be.
-        await fileProcessingQueue.add('process-upload', { fileId }, { jobId: `process-upload-${fileId}` });
+        await db.update(files).set({ fileStatus: 'uploaded', uploadedAt: new Date() }).where(eq(files.id, fileId));
+        // Not rethrown: the upload itself is complete, and the client won't retry this hook anyway.
+        // A failed enqueue (or a crash before it) is picked up by the worker's reconcile sweep.
+        try {
+            await fileProcessingQueue.add(PROCESS_UPLOAD_JOB, { fileId }, { jobId: processUploadJobId(fileId) });
+        } catch (err) {
+            console.error(`enqueue failed for file ${fileId}, leaving it to the reconcile sweep:`, err);
+        }
         return {};
     },
     // prevent tusServer from deleting finished files, this will be handled with a separate route which also cleans up other associated process like thumbs/previews
