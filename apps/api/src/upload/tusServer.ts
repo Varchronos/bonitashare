@@ -65,7 +65,9 @@ export const tusServer = new Server({
     locker: new RedisLocker(tusRedis, lockSubscriber),
     // uploads/<share id> — the share id doubles as files.id, the full id as storageKey.
     namingFunction: () => `${UPLOAD_KEY_PREFIX}${nanoid(10)}`,
-    generateUrl: (_req, { proto, host, path, id }) => `${proto}://${host}${path}/${toShareId(id)}`,
+    // Relative, so the client resolves it against the URL it posted to. Behind a proxy, the request's
+    // host and proto are the internal ones (e.g. http://api:3000), not what the browser can reach.
+    generateUrl: (_req, { path, id }) => `${path}/${toShareId(id)}`,
     getFileIdFromRequest: (_req, lastPath) => {
         // Mirrors tus's default guards, which a custom extractor bypasses.
         if (!lastPath || lastPath === 'upload' || /[\\\0]/.test(lastPath)) return undefined;
