@@ -1,5 +1,5 @@
 import { EVENTS, Server } from '@tus/server';
-import { S3Store } from '@tus/s3-store';
+import { S3Store, type MetadataValue } from '@tus/s3-store';
 import { nanoid } from 'nanoid';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
@@ -8,6 +8,7 @@ import { BUCKET } from '@/storage/client.js';
 import { fileProcessingQueue } from '@/queue/fileProcessing.js';
 import { Redis } from 'ioredis';
 import { RedisLocker } from './redisLocker.js';
+import { ExpiringRedisKvStore } from './redisKvStore.js';
 
 const endpoint = new URL(process.env.S3_ENDPOINT!);
 
@@ -15,8 +16,16 @@ function getUserId(req: { runtime?: { node?: { req: unknown } } }): string | nul
     return (req.runtime?.node?.req as { userId?: string | null } | undefined)?.userId ?? null;
 }
 
+// Separate from the BullMQ connection: lock and metadata calls should fail fast, not retry forever.
+// The subscriber needs its own connection because subscriber mode blocks other commands.
+const tusRedis = new Redis(process.env.REDIS_URL!, { maxRetriesPerRequest: 2 });
+const lockSubscriber = new Redis(process.env.REDIS_URL!);
+
 const datastore = new S3Store({
     partSize: 8 * 1024 * 1024,
+    // Shared across replicas: the default in-memory cache is only cleared on the replica that
+    // finished or removed an upload, so others kept stale entries (and never freed them).
+    cache: new ExpiringRedisKvStore<MetadataValue>(tusRedis, 'tus:meta:', 7 * 24 * 60 * 60),
     s3ClientConfig: {
         bucket: BUCKET,
         endpoint: endpoint.origin,
@@ -28,11 +37,6 @@ const datastore = new S3Store({
         },
     },
 });
-
-// Separate from the BullMQ connection: lock calls should fail fast, not retry forever.
-// The subscriber needs its own connection because subscriber mode blocks other commands.
-const lockRedis = new Redis(process.env.REDIS_URL!, { maxRetriesPerRequest: 2 });
-const lockSubscriber = new Redis(process.env.REDIS_URL!);
 
 // S3Store uses the tus upload id verbatim as the object key, so the prefix lives in the id.
 // Upload URLs and files.id carry only the bare share id; the prefix is added back on the way in.
@@ -58,7 +62,7 @@ export const tusServer = new Server({
     path: '/upload',
     datastore,
     // Shared across replicas so a retried PATCH on another replica can't write alongside the original.
-    locker: new RedisLocker(lockRedis, lockSubscriber),
+    locker: new RedisLocker(tusRedis, lockSubscriber),
     // uploads/<share id> — the share id doubles as files.id, the full id as storageKey.
     namingFunction: () => `${UPLOAD_KEY_PREFIX}${nanoid(10)}`,
     generateUrl: (_req, { proto, host, path, id }) => `${proto}://${host}${path}/${toShareId(id)}`,
