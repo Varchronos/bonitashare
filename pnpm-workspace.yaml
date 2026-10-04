@@ -10,4 +10,4 @@ catalog:
 allowBuilds:
   esbuild: true
   msgpackr-extract: true
-  sharp: true
+  sharp: false
