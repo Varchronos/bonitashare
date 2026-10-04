@@ -3,11 +3,12 @@ import { pipeline } from 'node:stream/promises';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import sharp from 'sharp';
 import { and, eq, lt } from 'drizzle-orm';
-import { db } from '@/db/client.js';
+import { db, pool } from '@/db/client.js';
 import { files } from '@/db/schema.js';
 import { nanoid } from 'nanoid';
 import { storage, BUCKET, THUMB_BUCKET } from '@/storage/client.js';
 import { redisConnection } from '@/queue/connection.js';
+import { onShutdown } from '@/utils/shutdown.js';
 import {
     FILE_PROCESSING_QUEUE,
     PROCESS_UPLOAD_JOB,
@@ -175,6 +176,16 @@ worker.on('failed', (job, err) => {
     // If this write is lost, the reconcile sweep repairs the row from the job's failed state.
     markProcessed(fileId, { processingStatus: 'failed', processingError: err.message })
         .catch((dbErr) => console.error(`could not mark file ${fileId} as failed:`, dbErr));
+});
+
+onShutdown('worker', async () => {
+    // Stops taking jobs and waits for the active one. Waiting jobs stay in Redis for the next start;
+    // a job killed mid-run would instead count as stalled, and a second stall fails it outright.
+    await worker.close();
+    // BullMQ doesn't close a connection it was handed, so the queue and its connection close separately.
+    await fileProcessingQueue.close();
+    await redisConnection.quit();
+    await pool.end();
 });
 
 // Upserted by every worker on startup; BullMQ keeps a single schedule per id however many run.

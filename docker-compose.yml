@@ -1,10 +1,21 @@
 services:
   api:
     image: bonitashare-api
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
+    # Two by default so cross-replica paths (tus locks, metadata cache, resumes) get exercised locally.
+    # Each takes a host port from the 3000-3001 range below; widen it before scaling further.
+    deploy:
+      replicas: 2
     build:
       context: .
       dockerfile: apps/api/Dockerfile
       target: dev
+    # tsx directly rather than through `pnpm run`: pnpm exits on SIGTERM without waiting for its
+    # child, which takes the container down before the app's graceful shutdown can run.
+    working_dir: /app/apps/api
+    command: node_modules/.bin/tsx watch src/index.ts
     ports:
       - "3000-3001:3000"
     env_file:
@@ -24,11 +35,16 @@ services:
 
   worker:
     image: bonitashare-api
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
     build:
       context: .
       dockerfile: apps/api/Dockerfile
       target: dev
-    command: pnpm --filter api run worker
+    # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
+    working_dir: /app/apps/api
+    command: node_modules/.bin/tsx watch src/worker.ts
     healthcheck:
       disable: true
     env_file:
@@ -47,10 +63,16 @@ services:
       - /app/packages/shared-types/node_modules
 
   web:
+    # tini as PID 1 and astro run directly (not through `pnpm run`, which swallows SIGTERM), so
+    # compose down stops web at once instead of waiting out the 10s grace period for a SIGKILL.
+    # No drain yet: in-flight proxied uploads are dropped and resumed by the client.
+    init: true
     build:
       context: .
       dockerfile: apps/web/Dockerfile
       target: dev
+    working_dir: /app/apps/web
+    command: node_modules/.bin/astro dev --host --force
     ports:
       - "4321:4321"
     environment:

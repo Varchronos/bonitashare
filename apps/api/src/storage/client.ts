@@ -46,16 +46,26 @@ const publicReadPolicy = (bucket: string) =>
         Statement: [{ Effect: 'Allow', Principal: { AWS: ['*'] }, Action: ['s3:GetObject'], Resource: [`arn:aws:s3:::${bucket}/*`] }],
     });
 
-export async function ensureBucket() {
-    const exists = await storage.bucketExists(BUCKET);
-    if (!exists) {
-        await storage.makeBucket(BUCKET, process.env.S3_REGION);
+// True only for the caller that actually created it. Replicas start together, so another one can
+// create the bucket between our exists check and makeBucket; losing that race isn't an error.
+async function createBucketIfMissing(bucket: string): Promise<boolean> {
+    if (await storage.bucketExists(bucket)) return false;
+    try {
+        await storage.makeBucket(bucket, process.env.S3_REGION);
+        return true;
+    } catch (err) {
+        const code = (err as { code?: string }).code;
+        if (code === 'BucketAlreadyOwnedByYou' || code === 'BucketAlreadyExists') return false;
+        throw err;
     }
+}
+
+export async function ensureBucket() {
+    await createBucketIfMissing(BUCKET);
 
     // The public policy is applied only when this creates the bucket. A pre-provisioned one (prod) is
     // left alone, since public access is configured differently per provider (R2 has no bucket policies).
-    if (!(await storage.bucketExists(THUMB_BUCKET))) {
-        await storage.makeBucket(THUMB_BUCKET, process.env.S3_REGION);
+    if (await createBucketIfMissing(THUMB_BUCKET)) {
         await storage.setBucketPolicy(THUMB_BUCKET, publicReadPolicy(THUMB_BUCKET));
     }
 }

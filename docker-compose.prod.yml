@@ -1,6 +1,9 @@
 services:
   api:
     image: bonitashare-api
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -13,6 +16,9 @@ services:
 
   worker:
     image: bonitashare-api
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -24,6 +30,9 @@ services:
       NODE_ENV: production
 
   web:
+    # tini as PID 1 so SIGTERM stops node at once instead of after the 10s grace period.
+    # No drain yet: in-flight proxied uploads are dropped and resumed by the client.
+    init: true
     build:
       context: .
       dockerfile: apps/web/Dockerfile

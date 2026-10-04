@@ -21,6 +21,11 @@ function getUserId(req: { runtime?: { node?: { req: unknown } } }): string | nul
 const tusRedis = new Redis(process.env.REDIS_URL!, { maxRetriesPerRequest: 2 });
 const lockSubscriber = new Redis(process.env.REDIS_URL!);
 
+// Only once no tus request is in flight: unlocking and saving the final offset both go through tusRedis.
+export async function closeTusConnections() {
+    await Promise.all([tusRedis.quit(), lockSubscriber.quit()]);
+}
+
 const datastore = new S3Store({
     partSize: 8 * 1024 * 1024,
     // Shared across replicas: the default in-memory cache is only cleared on the replica that
