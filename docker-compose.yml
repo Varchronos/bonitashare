@@ -61,6 +61,33 @@ services:
       - /app/apps/worker/node_modules
       - /app/packages/core/node_modules
 
+  video-worker:
+    image: bonitashare-video-worker
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
+    build:
+      context: .
+      dockerfile: apps/video-worker/Dockerfile
+      target: dev
+    # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
+    working_dir: /app/apps/video-worker
+    command: node_modules/.bin/tsx watch --conditions=development src/index.ts
+    env_file:
+      - apps/video-worker/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/video-worker/node_modules
+      - /app/packages/core/node_modules
+
   web:
     # tini as PID 1 and astro run directly (not through `pnpm run`, which swallows SIGTERM), so
     # compose down stops web at once instead of waiting out the 10s grace period for a SIGKILL.

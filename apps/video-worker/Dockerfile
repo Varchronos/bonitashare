@@ -1,10 +1,12 @@
 # Build context is the repo root (not this directory) so pnpm can see the
-# workspace: apps/api depends on packages/shared-types and packages/core via workspace:*.
+# workspace: apps/video-worker depends on packages/core via workspace:*.
 
 FROM node:22-slim AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable && corepack prepare pnpm@12.5.1 --activate
+# In base so dev and runtime both get it; transcoding shells out to the ffmpeg binary.
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
 # Install deps first, keyed only on manifests, so this layer caches
@@ -19,23 +21,16 @@ COPY packages/shared-types/package.json packages/shared-types/package.json
 COPY packages/core/package.json packages/core/package.json
 RUN pnpm install --frozen-lockfile
 
+# No HTTP server, so no healthcheck.
 FROM deps AS dev
 COPY . .
-EXPOSE 3000
-HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
-  CMD node -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-CMD ["pnpm", "--filter", "api", "run", "dev"]
+CMD ["pnpm", "--filter", "video-worker", "run", "dev"]
 
 FROM deps AS build
 COPY . .
-RUN pnpm --filter api... run build
+RUN pnpm --filter video-worker... run build
 
 FROM base AS runtime
 ENV NODE_ENV=production
 COPY --from=build /app /app
-EXPOSE 3000
-HEALTHCHECK --interval=5s --timeout=5s --retries=5 \
-  CMD node -e "fetch('http://localhost:3000/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-CMD ["node", "apps/api/dist/index.js"]
-
-
+CMD ["node", "apps/video-worker/dist/index.js"]

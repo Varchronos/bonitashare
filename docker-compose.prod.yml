@@ -26,6 +26,18 @@ services:
     environment:
       NODE_ENV: production
 
+  video-worker:
+    image: bonitashare-video-worker
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
+    build:
+      context: .
+      dockerfile: apps/video-worker/Dockerfile
+      target: runtime
+    environment:
+      NODE_ENV: production
+
   web:
     # tini as PID 1 so SIGTERM stops node at once instead of after the 10s grace period.
     # No drain yet: in-flight proxied uploads are dropped and resumed by the client.

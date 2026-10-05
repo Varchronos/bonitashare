@@ -255,6 +255,37 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
+  apps/video-worker:
+    dependencies:
+      '@bonitashare/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      bullmq:
+        specifier: 'catalog:'
+        version: 6.3.9(ioredis@6.0.0)(pg@8.23.1)
+      dotenv:
+        specifier: ^18.0.1
+        version: 18.0.5
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 1.0.0-rc.4(@types/pg@8.23.1)(pg@8.23.1)(zod@4.6.5)
+      nanoid:
+        specifier: ^5.1.6
+        version: 5.1.16
+      sharp:
+        specifier: ^0.34.2
+        version: 0.34.5
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.6.4
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.15
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
   apps/web:
     dependencies:
       '@astrojs/node':
