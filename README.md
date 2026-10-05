@@ -2,12 +2,17 @@
 
 pnpm monorepo:
 
-- `apps/api`: Fastify API and the BullMQ file-processing worker
+- `apps/api`: Fastify API (uploads, sessions, downloads)
+- `apps/worker`: BullMQ file-processing worker (thumbnails, reconcile sweep)
 - `apps/web`: Astro frontend
 - `packages/core`: shared db, storage, queue and shutdown code, plus the drizzle migrations
 - `packages/shared-types`: types shared by api and web
 
 Everything runs in Docker for development. Run the commands below from the repo root.
+
+Each app has its own `.env`. Copy it from the `.env.example` next to it. `apps/worker/.env` holds only
+the db, redis and s3 settings. Its shared values (db, redis, s3 credentials and buckets) must match
+`apps/api/.env`.
 
 ## Daily commands
 

@@ -15,17 +15,14 @@ services:
       PORT: "3000"
 
   worker:
-    image: bonitashare-api
+    image: bonitashare-worker
     # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
     init: true
     stop_grace_period: 30s
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: apps/worker/Dockerfile
       target: runtime
-    command: node apps/api/dist/worker.js
-    healthcheck:
-      disable: true
     environment:
       NODE_ENV: production
 

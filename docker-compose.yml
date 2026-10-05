@@ -35,21 +35,19 @@ services:
       - /app/packages/core/node_modules
 
   worker:
-    image: bonitashare-api
+    image: bonitashare-worker
     # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
     init: true
     stop_grace_period: 30s
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: apps/worker/Dockerfile
       target: dev
     # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
-    working_dir: /app/apps/api
-    command: node_modules/.bin/tsx watch --conditions=development src/worker.ts
-    healthcheck:
-      disable: true
+    working_dir: /app/apps/worker
+    command: node_modules/.bin/tsx watch --conditions=development src/index.ts
     env_file:
-      - apps/api/.env
+      - apps/worker/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,8 +58,7 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/apps/api/node_modules
-      - /app/packages/shared-types/node_modules
+      - /app/apps/worker/node_modules
       - /app/packages/core/node_modules
 
   web:

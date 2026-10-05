@@ -3,22 +3,27 @@ import { pipeline } from 'node:stream/promises';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import sharp from 'sharp';
 import { and, eq, lt } from 'drizzle-orm';
-import { db, pool } from '@/db/client.js';
-import { files } from '@bonitashare/core/db';
+import { createDb, files } from '@bonitashare/core/db';
 import { nanoid } from 'nanoid';
-import { BUCKET, THUMB_BUCKET } from '@bonitashare/core/storage';
-import { storage } from '@/storage/client.js';
-import { redisConnection, fileProcessingQueue } from '@/queue/client.js';
+import { BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
 import { onShutdown } from '@bonitashare/core/shutdown';
 import {
     FILE_PROCESSING_QUEUE,
     PROCESS_UPLOAD_JOB,
     RECONCILE_UPLOADS_JOB,
+    createFileProcessingQueue,
+    createRedis,
     processUploadJobId,
     type FileProcessingJobData,
     type FileProcessingJobName,
     type ProcessUploadJob,
 } from '@bonitashare/core/queue';
+
+const { db, pool } = createDb(process.env.DATABASE_URL!);
+const storage = createStorage();
+const redisConnection = createRedis(process.env.REDIS_URL!);
+// Used to enqueue the reconcile sweep's re-adds and to register its schedule.
+const fileProcessingQueue = createFileProcessingQueue(redisConnection);
 
 const THUMBNAILABLE_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 
