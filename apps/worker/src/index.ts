@@ -3,22 +3,27 @@ import { pipeline } from 'node:stream/promises';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import sharp from 'sharp';
 import { and, eq, lt } from 'drizzle-orm';
-import { db, pool } from '@/db/client.js';
-import { files } from '@/db/schema.js';
+import { createDb, files } from '@bonitashare/core/db';
 import { nanoid } from 'nanoid';
-import { storage, BUCKET, THUMB_BUCKET } from '@/storage/client.js';
-import { redisConnection } from '@/queue/connection.js';
-import { onShutdown } from '@/utils/shutdown.js';
+import { BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
+import { onShutdown } from '@bonitashare/core/shutdown';
 import {
     FILE_PROCESSING_QUEUE,
     PROCESS_UPLOAD_JOB,
     RECONCILE_UPLOADS_JOB,
-    fileProcessingQueue,
+    createFileProcessingQueue,
+    createRedis,
     processUploadJobId,
     type FileProcessingJobData,
     type FileProcessingJobName,
     type ProcessUploadJob,
-} from '@/queue/fileProcessing.js';
+} from '@bonitashare/core/queue';
+
+const { db, pool } = createDb(process.env.DATABASE_URL!);
+const storage = createStorage();
+const redisConnection = createRedis(process.env.REDIS_URL!);
+// Used to enqueue the reconcile sweep's re-adds and to register its schedule.
+const fileProcessingQueue = createFileProcessingQueue(redisConnection);
 
 const THUMBNAILABLE_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 
@@ -178,7 +183,10 @@ worker.on('failed', (job, err) => {
         .catch((dbErr) => console.error(`could not mark file ${fileId} as failed:`, dbErr));
 });
 
-onShutdown('worker', async () => {
+// Must stay under the service's stop_grace_period in docker compose, or Docker SIGKILLs first.
+const SHUTDOWN_DEADLINE_MS = 28_000;
+
+onShutdown('worker', SHUTDOWN_DEADLINE_MS, async () => {
     // Stops taking jobs and waits for the active one. Waiting jobs stay in Redis for the next start;
     // a job killed mid-run would instead count as stalled, and a second stall fails it outright.
     await worker.close();

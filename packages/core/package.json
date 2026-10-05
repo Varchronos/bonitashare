@@ -1,0 +1,48 @@
+{
+  "name": "@bonitashare/core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./db": {
+      "development": "./src/db/index.ts",
+      "types": "./dist/db/index.d.ts",
+      "default": "./dist/db/index.js"
+    },
+    "./storage": {
+      "development": "./src/storage/client.ts",
+      "types": "./dist/storage/client.d.ts",
+      "default": "./dist/storage/client.js"
+    },
+    "./queue": {
+      "development": "./src/queue/index.ts",
+      "types": "./dist/queue/index.d.ts",
+      "default": "./dist/queue/index.js"
+    },
+    "./shutdown": {
+      "development": "./src/utils/shutdown.ts",
+      "types": "./dist/utils/shutdown.d.ts",
+      "default": "./dist/utils/shutdown.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:studio": "DRIZZLE_FROM_HOST=1 DOTENV_CONFIG_PATH=../../apps/api/.env drizzle-kit studio"
+  },
+  "dependencies": {
+    "bullmq": "catalog:",
+    "drizzle-orm": "catalog:",
+    "ioredis": "^6.0.0",
+    "minio": "^8.0.7",
+    "pg": "^8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/pg": "^8.23.1",
+    "dotenv": "^18.0.5",
+    "drizzle-kit": "1.0.0-rc.4",
+    "typescript": "catalog:"
+  }
+}

@@ -8,10 +8,9 @@ import fastifyCookie from "@fastify/cookie";
 import handleSession from "./plugins/custom/handleSession.js";
 import { ensureBucket } from "./storage/client.js";
 import { closeTusConnections } from "./upload/tusServer.js";
-import { fileProcessingQueue } from "./queue/fileProcessing.js";
-import { redisConnection } from "./queue/connection.js";
+import { fileProcessingQueue, redisConnection } from "./queue/client.js";
 import { pool } from "./db/client.js";
-import { onShutdown } from "./utils/shutdown.js";
+import { onShutdown } from "@bonitashare/core/shutdown";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -44,10 +43,12 @@ app.register(autoload, {
 
 const port = Number(process.env.PORT ?? 3000);
 
-// Leaves room under onShutdown's hard deadline for closing Redis and Postgres afterwards.
+// Must stay under the service's stop_grace_period in docker compose, or Docker SIGKILLs first.
+const SHUTDOWN_DEADLINE_MS = 28_000;
+// Leaves room under the shutdown deadline for closing Redis and Postgres afterwards.
 const DRAIN_TIMEOUT_MS = 20_000;
 
-onShutdown("api", async () => {
+onShutdown("api", SHUTDOWN_DEADLINE_MS, async () => {
   // From here Fastify answers every new request (tus POSTs included) with 503 + Connection: close
   // before any handler runs, and waits for in-flight ones. A tus PATCH is one 5MB chunk, so the
   // wait is normally seconds; clients resume the rest of their upload from another replica or

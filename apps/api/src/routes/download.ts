@@ -2,8 +2,9 @@ import type { FastifyPluginAsync } from 'fastify';
 import type { ApiResponse } from '@bonitashare/shared-types';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { files } from '@/db/schema.js';
-import { publicStorage, BUCKET, thumbUrl } from '@/storage/client.js';
+import { files } from '@bonitashare/core/db';
+import { BUCKET } from '@bonitashare/core/storage';
+import { publicStorage, thumbUrl } from '@/storage/client.js';
 
 const URL_EXPIRY_SECONDS = 60 * 60;
 

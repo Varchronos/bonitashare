@@ -1,5 +1,5 @@
 import { Queue } from 'bullmq';
-import { redisConnection } from './connection.js';
+import type { Redis } from 'ioredis';
 
 export const FILE_PROCESSING_QUEUE = 'file-processing';
 
@@ -11,13 +11,15 @@ export type ProcessUploadJob = { fileId: string };
 export type FileProcessingJobData = ProcessUploadJob | Record<string, never>;
 export type FileProcessingJobName = typeof PROCESS_UPLOAD_JOB | typeof RECONCILE_UPLOADS_JOB;
 
-export const fileProcessingQueue = new Queue<FileProcessingJobData, void, FileProcessingJobName>(FILE_PROCESSING_QUEUE, {
-    connection: redisConnection,
-    defaultJobOptions: {
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2000 },
-    },
-});
+// BullMQ doesn't close a connection it was handed, so callers close the queue and the connection separately.
+export const createFileProcessingQueue = (connection: Redis) =>
+    new Queue<FileProcessingJobData, void, FileProcessingJobName>(FILE_PROCESSING_QUEUE, {
+        connection,
+        defaultJobOptions: {
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 2000 },
+        },
+    });
 
 // A stable jobId makes BullMQ ignore a duplicate add for the same file, which is what lets the
 // reconcile sweep re-add freely. Prefixed because BullMQ rejects purely numeric custom ids,

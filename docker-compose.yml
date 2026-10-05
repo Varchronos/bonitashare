@@ -15,7 +15,7 @@ services:
     # tsx directly rather than through `pnpm run`: pnpm exits on SIGTERM without waiting for its
     # child, which takes the container down before the app's graceful shutdown can run.
     working_dir: /app/apps/api
-    command: node_modules/.bin/tsx watch src/index.ts
+    command: node_modules/.bin/tsx watch --conditions=development src/index.ts
     ports:
       - "3000-3001:3000"
     env_file:
@@ -32,23 +32,22 @@ services:
       - /app/node_modules
       - /app/apps/api/node_modules
       - /app/packages/shared-types/node_modules
+      - /app/packages/core/node_modules
 
   worker:
-    image: bonitashare-api
+    image: bonitashare-worker
     # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
     init: true
     stop_grace_period: 30s
     build:
       context: .
-      dockerfile: apps/api/Dockerfile
+      dockerfile: apps/worker/Dockerfile
       target: dev
     # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
-    working_dir: /app/apps/api
-    command: node_modules/.bin/tsx watch src/worker.ts
-    healthcheck:
-      disable: true
+    working_dir: /app/apps/worker
+    command: node_modules/.bin/tsx watch --conditions=development src/index.ts
     env_file:
-      - apps/api/.env
+      - apps/worker/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,8 +58,35 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
-      - /app/apps/api/node_modules
-      - /app/packages/shared-types/node_modules
+      - /app/apps/worker/node_modules
+      - /app/packages/core/node_modules
+
+  video-worker:
+    image: bonitashare-video-worker
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
+    build:
+      context: .
+      dockerfile: apps/video-worker/Dockerfile
+      target: dev
+    # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
+    working_dir: /app/apps/video-worker
+    command: node_modules/.bin/tsx watch --conditions=development src/index.ts
+    env_file:
+      - apps/video-worker/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      storage:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/apps/video-worker/node_modules
+      - /app/packages/core/node_modules
 
   web:
     # tini as PID 1 and astro run directly (not through `pnpm run`, which swallows SIGTERM), so
