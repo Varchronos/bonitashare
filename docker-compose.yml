@@ -15,7 +15,7 @@ services:
     # tsx directly rather than through `pnpm run`: pnpm exits on SIGTERM without waiting for its
     # child, which takes the container down before the app's graceful shutdown can run.
     working_dir: /app/apps/api
-    command: node_modules/.bin/tsx watch src/index.ts
+    command: node_modules/.bin/tsx watch --conditions=development src/index.ts
     ports:
       - "3000-3001:3000"
     env_file:
@@ -32,6 +32,7 @@ services:
       - /app/node_modules
       - /app/apps/api/node_modules
       - /app/packages/shared-types/node_modules
+      - /app/packages/core/node_modules
 
   worker:
     image: bonitashare-api
@@ -44,7 +45,7 @@ services:
       target: dev
     # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
     working_dir: /app/apps/api
-    command: node_modules/.bin/tsx watch src/worker.ts
+    command: node_modules/.bin/tsx watch --conditions=development src/worker.ts
     healthcheck:
       disable: true
     env_file:
@@ -61,6 +62,7 @@ services:
       - /app/node_modules
       - /app/apps/api/node_modules
       - /app/packages/shared-types/node_modules
+      - /app/packages/core/node_modules
 
   web:
     # tini as PID 1 and astro run directly (not through `pnpm run`, which swallows SIGTERM), so

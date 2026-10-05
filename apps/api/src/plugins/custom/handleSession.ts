@@ -1,5 +1,5 @@
 import { db } from "@/db/client.js";
-import { userSessions, users } from "@/db/schema.js";
+import { userSessions, users } from "@bonitashare/core/db";
 import { eq } from "drizzle-orm";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest, onRequestHookHandler } from "fastify";
 import fp from "fastify-plugin";

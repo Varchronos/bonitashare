@@ -6,6 +6,8 @@ catalog:
   typescript: ^6.0.3
   "@types/node": ^26.6.2
   tsx: ^4.23.15
+  drizzle-orm: 1.0.0-rc.4
+  bullmq: ^6.3.9
 
 allowBuilds:
   esbuild: true

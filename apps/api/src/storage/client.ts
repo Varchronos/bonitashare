@@ -1,16 +1,6 @@
-import { Client } from "minio";
+import { BUCKET, THUMB_BUCKET, createStorage } from "@bonitashare/core/storage";
 
-const endpoint = new URL(process.env.S3_ENDPOINT!);
-
-export const storage = new Client({
-    endPoint: endpoint.hostname,
-    port: endpoint.port ? Number(endpoint.port) : undefined,
-    useSSL: endpoint.protocol === "https:",
-    accessKey: process.env.S3_ACCESS_KEY,
-    secretKey: process.env.S3_SECRET_KEY,
-    region: process.env.S3_REGION,
-    pathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
-});
+export const storage = createStorage();
 
 // Signs URLs against the endpoint browsers can actually reach — `storage`
 // above points at the internal docker hostname, which only resolves
@@ -18,20 +8,7 @@ export const storage = new Client({
 // there's no internal-vs-public split.
 const publicEndpoint = new URL(process.env.S3_PUBLIC_ENDPOINT || process.env.S3_ENDPOINT!);
 
-export const publicStorage = new Client({
-    endPoint: publicEndpoint.hostname,
-    port: publicEndpoint.port ? Number(publicEndpoint.port) : undefined,
-    useSSL: publicEndpoint.protocol === "https:",
-    accessKey: process.env.S3_ACCESS_KEY,
-    secretKey: process.env.S3_SECRET_KEY,
-    region: process.env.S3_REGION,
-    pathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
-});
-
-export const BUCKET = process.env.S3_BUCKET!;
-
-// Anonymous-read bucket so thumbnails are served straight to browsers (and CDNs) without presigning.
-export const THUMB_BUCKET = process.env.S3_THUMB_BUCKET!;
+export const publicStorage = createStorage(publicEndpoint.href);
 
 // Where browsers fetch thumbnails from. Defaults to path-style on the public S3 endpoint; point it at
 // a CDN or R2 custom domain in prod.

@@ -1,5 +1,5 @@
 # Build context is the repo root (not this directory) so pnpm can see the
-# workspace: apps/api depends on packages/shared-types via workspace:*.
+# workspace: apps/api depends on packages/shared-types and packages/core via workspace:*.
 
 FROM node:22-slim AS base
 ENV PNPM_HOME="/pnpm"
@@ -14,6 +14,7 @@ COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
 COPY packages/shared-types/package.json packages/shared-types/package.json
+COPY packages/core/package.json packages/core/package.json
 RUN pnpm install --frozen-lockfile
 
 FROM deps AS dev
