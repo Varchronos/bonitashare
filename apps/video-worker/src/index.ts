@@ -1,9 +1,13 @@
 import 'dotenv/config';
 import { execFile } from 'node:child_process';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { promisify } from 'node:util';
-import { Worker, type Job } from 'bullmq';
-import { createDb } from '@bonitashare/core/db';
-import { createStorage } from '@bonitashare/core/storage';
+import { UnrecoverableError, Worker, type Job } from 'bullmq';
+import { eq } from 'drizzle-orm';
+import { createDb, fileVideos, files } from '@bonitashare/core/db';
+import { BUCKET, createStorage } from '@bonitashare/core/storage';
 import {
     VIDEO_PROCESSING_QUEUE,
     createRedis,
@@ -23,10 +27,50 @@ const redisConnection = createRedis(process.env.REDIS_URL!);
 const { stdout } = await execFileAsync('ffmpeg', ['-version']);
 console.log(stdout.split('\n')[0]);
 
+const WORKDIR_PREFIX = 'transcode-';
+
+// A job killed mid-run (SIGKILL, OOM) never reaches its finally, so its source and renditions stay on
+// disk. Concurrency is 1 and tmpdir is this container's own, so nothing else can be using these yet.
+for (const entry of await readdir(tmpdir())) {
+    if (entry.startsWith(WORKDIR_PREFIX)) await rm(path.join(tmpdir(), entry), { recursive: true, force: true });
+}
+
+async function downloadSource(storageKey: string, dest: string) {
+    try {
+        // To disk rather than piped into ffmpeg: phone MP4s often put the moov atom at the end,
+        // which ffmpeg can only reach on seekable input.
+        await storage.fGetObject(BUCKET, storageKey, dest);
+    } catch (err) {
+        // The original is gone, so no retry can bring it back. Anything else (network, MinIO) retries.
+        // fGetObject stats first, and a HEAD 404 has no body, so minio reports it as NotFound, not NoSuchKey.
+        const code = (err as { code?: string }).code;
+        if (code === 'NotFound' || code === 'NoSuchKey') throw new UnrecoverableError(`original missing: ${storageKey}`);
+        throw err;
+    }
+}
+
 async function transcodeHls(job: Job<TranscodeHlsJob>) {
-    // TODO: download the original, transcode to HLS renditions with ffmpeg, upload the playlist and
-    // segments, and record them on the file row.
-    throw new Error(`transcode-hls not implemented yet (file ${job.data.fileId})`);
+    const { fileId } = job.data;
+    const [video] = await db
+        .select({ status: fileVideos.status, hlsPrefix: fileVideos.hlsPrefix, storageKey: files.storageKey })
+        .from(fileVideos)
+        .innerJoin(files, eq(files.id, fileVideos.fileId))
+        .where(eq(fileVideos.fileId, fileId));
+    // Deleted or expired since enqueue (the cascade took the video row too), or a duplicate run of a
+    // job that already finished: either way there's nothing to do.
+    if (!video || video.status === 'done') return;
+
+    // Unique per run, so a leftover from an earlier attempt can't be mistaken for this one's output.
+    const workdir = await mkdtemp(path.join(tmpdir(), `${WORKDIR_PREFIX}${fileId}-`));
+    try {
+        const sourcePath = path.join(workdir, 'source');
+        await downloadSource(video.storageKey, sourcePath);
+
+        // TODO: probe, transcode to HLS renditions, upload under video.hlsPrefix, record on file_videos.
+        throw new Error(`transcode-hls not implemented past download (file ${fileId})`);
+    } finally {
+        await rm(workdir, { recursive: true, force: true });
+    }
 }
 
 const worker = new Worker<VideoProcessingJobData, void, VideoProcessingJobName>(
