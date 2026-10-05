@@ -200,7 +200,8 @@ onShutdown('worker', SHUTDOWN_DEADLINE_MS, async () => {
 await fileProcessingQueue.upsertJobScheduler(
     RECONCILE_UPLOADS_JOB,
     { every: RECONCILE_EVERY_MS },
-    { name: RECONCILE_UPLOADS_JOB, data: {}, opts: { attempts: 1 } },
+    // Nothing reads a finished sweep back, so completions go immediately; a few failures stay for debugging.
+    { name: RECONCILE_UPLOADS_JOB, data: {}, opts: { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } } },
 );
 
 console.log('Worker listening on queue:', FILE_PROCESSING_QUEUE);
