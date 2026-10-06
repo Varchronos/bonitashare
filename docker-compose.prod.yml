@@ -35,6 +35,11 @@ services:
       context: .
       dockerfile: apps/video-worker/Dockerfile
       target: runtime
+    # 4 CPUs is where the encode stops scaling (16 was only ~20% faster for twice the CPU time), so add
+    # replicas for throughput rather than raising this. The worker reads this limit from cgroups and sizes
+    # ffmpeg's threads to it. 2g covers the ~750MB encode at 4 threads plus 4K sources and node.
+    cpus: 4
+    mem_limit: 2g
     environment:
       NODE_ENV: production
 
