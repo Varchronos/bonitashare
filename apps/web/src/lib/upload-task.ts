@@ -169,13 +169,18 @@ export function shareIdFor(task: { tusUploadUrl: string }) {
 // times with backoff, then give up quietly — the row keeps its file icon, and
 // the next page load tries again.
 const THUMBNAIL_POLL_DELAYS_MS = [1000, 2000, 4000, 8000]
+// A video's poster comes from the video-worker after it has downloaded and
+// probed the file, and behind any transcode already running, so it gets
+// about two minutes rather than fifteen seconds.
+const VIDEO_THUMBNAIL_POLL_DELAYS_MS = [2000, 4000, 8000, 15000, 30000, 60000]
 
 export async function watchThumbnail(id: string, signal: AbortSignal) {
     const task = useUploadStore.getState().files.find((f) => f.id === id)
     const shareId = task && shareIdFor(task)
     if (!shareId) return
 
-    for (const delay of THUMBNAIL_POLL_DELAYS_MS) {
+    const delays = task.contentType.startsWith('video/') ? VIDEO_THUMBNAIL_POLL_DELAYS_MS : THUMBNAIL_POLL_DELAYS_MS
+    for (const delay of delays) {
         await new Promise((resolve) => setTimeout(resolve, delay))
         if (signal.aborted) return
         try {

@@ -35,8 +35,10 @@ export default function TaskRow({ id }: { id: string }) {
 	// reference and never re-render when this one's progress changes.
 	const task = useUploadStore((s) => s.files.find((f) => f.id === id));
 
-	// Only images get thumbnails, so other types never poll.
-	const awaitingThumbnail = task?.status === 'done' && !task.thumbnailUrl && task.contentType.startsWith('image/');
+	// Images get a thumbnail and videos a poster frame; other types never poll.
+	const isVideo = task?.contentType.startsWith('video/') ?? false;
+	const awaitingThumbnail =
+		task?.status === 'done' && !task.thumbnailUrl && (task.contentType.startsWith('image/') || isVideo);
 	useEffect(() => {
 		if (!awaitingThumbnail) return;
 		const controller = new AbortController();
@@ -56,9 +58,14 @@ export default function TaskRow({ id }: { id: string }) {
 
 	return (
 		<li>
-			<div className={`task-icon${isError ? ' task-icon-error' : ''}`}>
+			<div className={`task-icon${isError ? ' task-icon-error' : ''}${isVideo ? ' task-icon-video' : ''}`}>
 				{task.thumbnailUrl && !thumbnailFailed ? (
-					<img className="task-thumb" src={task.thumbnailUrl} alt="" onError={() => setThumbnailFailed(true)} />
+					<img
+						className={isVideo ? 'task-thumb task-thumb-video' : 'task-thumb'}
+						src={task.thumbnailUrl}
+						alt=""
+						onError={() => setThumbnailFailed(true)}
+					/>
 				) : (
 					<FileIcon />
 				)}

@@ -1,10 +1,10 @@
 ---
-import Layout from '../layouts/Layout.astro';
-import { getFileLink } from '../lib/file';
+import Layout from "../layouts/Layout.astro";
+import { getFileLink, getFileVideo } from "../lib/file";
 
 function formatBytes(bytes: number) {
 	if (bytes < 1024) return `${bytes} B`;
-	const units = ['KB', 'MB', 'GB'];
+	const units = ["KB", "MB", "GB"];
 	let value = bytes / 1024;
 	let i = 0;
 	while (value >= 1024 && i < units.length - 1) {
@@ -15,18 +15,23 @@ function formatBytes(bytes: number) {
 }
 
 const { id } = Astro.params;
-const { data: file, error } = await getFileLink(Astro, id!);
+const { data: file, error, cookie } = await getFileLink(Astro, id!);
 
 if (!file) {
-	Astro.response.status = error?.code === 'FILE_EXPIRED' ? 410 : 404;
+	Astro.response.status = error?.code === "FILE_EXPIRED" ? 410 : 404;
 }
 
-const isImage = file?.contentType?.startsWith('image/') ?? false;
-const isVideo = file?.contentType?.startsWith('video/') ?? false;
-const isAudio = file?.contentType?.startsWith('audio/') ?? false;
+const isImage = file?.contentType?.startsWith("image/") ?? false;
+const isVideo = file?.contentType?.startsWith("video/") ?? false;
+const isAudio = file?.contentType?.startsWith("audio/") ?? false;
+
+// Only the stream URL is decided here; hls.js attaches in the browser (see the script below).
+// Anything short of a finished transcode plays the original file directly.
+const video = isVideo ? (await getFileVideo(cookie, id!)).data : null;
+const hlsUrl = video?.hlsUrl ?? null;
 ---
 
-<Layout title={file?.filename ?? 'File not found'} ogImage={file?.thumbnailUrl}>
+<Layout title={file?.filename ?? "File not found"} ogImage={file?.thumbnailUrl}>
 	<section class="container page">
 		{
 			file ? (
@@ -34,14 +39,46 @@ const isAudio = file?.contentType?.startsWith('audio/') ?? false;
 					<h1>{file.filename}</h1>
 					<p class="meta">
 						{formatBytes(file.sizeBytes)}
-						{file.contentType ? ` · ${file.contentType}` : ''}
+						{file.contentType ? ` · ${file.contentType}` : ""}
 					</p>
 
 					<div class="preview">
 						{isImage && <img src={file.url} alt={file.filename} />}
-						{isVideo && <video src={file.url} controls />}
+						{isVideo &&
+							(hlsUrl ? (
+								<video
+									data-hls-src={hlsUrl}
+									data-fallback-src={file.url}
+									poster={file.thumbnailUrl ?? undefined}
+									width={video?.width ?? undefined}
+									height={video?.height ?? undefined}
+									controls
+									playsinline
+									preload="metadata"
+								/>
+							) : (
+								<>
+									<video
+										src={file.url}
+										poster={file.thumbnailUrl ?? undefined}
+										controls
+										playsinline
+										preload="metadata"
+									/>
+									{video?.status === "pending" && (
+										<p class="note">
+											A streaming version is still processing. Playing the
+											original for now.
+										</p>
+									)}
+								</>
+							))}
 						{isAudio && <audio src={file.url} controls />}
-						{!isImage && !isVideo && !isAudio && <p class="no-preview">No preview available for this file type.</p>}
+						{!isImage && !isVideo && !isAudio && (
+							<p class="no-preview">
+								No preview available for this file type.
+							</p>
+						)}
 					</div>
 
 					<a class="btn btn-primary" href={file.url}>
@@ -50,10 +87,14 @@ const isAudio = file?.contentType?.startsWith('audio/') ?? false;
 				</>
 			) : (
 				<>
-					<h1>{error?.code === 'FILE_EXPIRED' ? 'This link has expired' : 'File not found'}</h1>
+					<h1>
+						{error?.code === "FILE_EXPIRED"
+							? "This link has expired"
+							: "File not found"}
+					</h1>
 					<p class="meta">
-						{error?.code === 'FILE_EXPIRED'
-							? 'The file this link pointed to is no longer available.'
+						{error?.code === "FILE_EXPIRED"
+							? "The file this link pointed to is no longer available."
 							: "This link doesn't point to a file we have — check that you copied it correctly."}
 					</p>
 				</>
@@ -61,6 +102,38 @@ const isAudio = file?.contentType?.startsWith('audio/') ?? false;
 		}
 	</section>
 </Layout>
+
+<script>
+	const player = document.querySelector<HTMLVideoElement>("video[data-hls-src]");
+
+	if (player) {
+		const src = player.dataset.hlsSrc!;
+		// Presigned URL of the original; used when the stream can't be played at all.
+		const fallback = player.dataset.fallbackSrc!;
+
+		// Imported only on pages with a stream, so other file pages don't download hls.js.
+		const { default: Hls } = await import("hls.js");
+
+		// hls.js first, even where the browser plays HLS natively (Safari): it picks renditions more
+		// smoothly and handles errors the same way everywhere. Native is for iOS versions without MSE.
+		if (Hls.isSupported()) {
+			const hls = new Hls();
+			hls.on(Hls.Events.ERROR, (_event, data) => {
+				// Non-fatal errors (a slow segment, a rendition switch) hls.js recovers from itself.
+				if (!data.fatal) return;
+				console.error("HLS playback failed, falling back to the original", data);
+				hls.destroy();
+				player.src = fallback;
+			});
+			hls.loadSource(src);
+			hls.attachMedia(player);
+		} else if (player.canPlayType("application/vnd.apple.mpegurl")) {
+			player.src = src;
+		} else {
+			player.src = fallback;
+		}
+	}
+</script>
 
 <style>
 	.page {
@@ -87,8 +160,16 @@ const isAudio = file?.contentType?.startsWith('audio/') ?? false;
 	.preview img,
 	.preview video {
 		max-width: 100%;
+		/* With width/height set from the probe, the box keeps the video's aspect ratio before it loads. */
+		height: auto;
 		border-radius: var(--radius);
 		display: block;
+	}
+
+	.note {
+		margin: 8px 0 0;
+		color: var(--muted);
+		font-size: 0.85rem;
 	}
 
 	.preview audio {

@@ -166,7 +166,7 @@ catalogs:
   default:
     '@types/node':
       specifier: ^26.6.2
-      version: 26.6.2
+      version: 26.6.4
     bullmq:
       specifier: ^6.3.9
       version: 6.3.9
@@ -309,6 +309,9 @@ importers:
       astro:
         specifier: ^7.3.3
         version: 7.3.3(@emnapi/core@1.11.3)(@emnapi/runtime@1.11.3)(@types/node@26.6.2)(idb-keyval@6.3.0)(ioredis@5.11.1)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1)
+      hls.js:
+        specifier: ^1.7.3
+        version: 1.7.3
       idb-keyval:
         specifier: ^6.3.0
         version: 6.3.0
@@ -2498,6 +2501,9 @@ packages:
 
   hast-util-whitespace@3.0.0:
     resolution: {integrity: sha512-88JUN06ipLwsnv+dVn+OIYOvAuvBMy/Qoi6O7mQHxdPXpjy+Cd6xRkWwux7DKO+4sYILtLBRIKgsdpS2gQc7qw==}
+
+  hls.js@1.7.3:
+    resolution: {integrity: sha512-MsPlx6yVW4Qv4C7mEVou4/gk/5cN2dVxOTnrNjPSmyH2f0Ln+/UkG10Ax1PE6OvrmTVPKgQYozTtBaPOuCzq7A==}
 
   html-escaper@3.0.3:
     resolution: {integrity: sha512-RuMffC89BOWQoY0WKGpIhn5gX3iI54O6nRA0yC124NYVtzjmFWBIiFd8M0x+ZdX0P9R4lADg1mgP8C7PxGOWuQ==}
@@ -5722,6 +5728,8 @@ snapshots:
   hast-util-whitespace@3.0.0:
     dependencies:
       '@types/hast': 3.0.5
+
+  hls.js@1.7.3: {}
 
   html-escaper@3.0.3: {}
 

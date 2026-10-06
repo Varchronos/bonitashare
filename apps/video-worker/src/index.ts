@@ -298,6 +298,7 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
             hlsPrefix: fileVideos.hlsPrefix,
             storageKey: files.storageKey,
             sizeBytes: files.sizeBytes,
+            thumbKey: files.thumbKey,
         })
         .from(fileVideos)
         .innerJoin(files, eq(files.id, fileVideos.fileId))
@@ -324,6 +325,17 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
         if (probed.durationMs !== null && probed.durationMs > MAX_DURATION_MS) {
             throw new UnrecoverableError(`duration ${probed.durationMs}ms is over the ${MAX_DURATION_MS}ms limit`);
         }
+        // Before the encode, which can take many minutes: upload lists and link previews get a thumbnail
+        // within seconds, and keep it even if the transcode later fails. Skipped on a retry that already
+        // made one, so attempts don't each leave an orphaned poster behind.
+        if (!video.thumbKey) {
+            const thumbKey = await makePoster(workdir, probed, log);
+            if (thumbKey) {
+                await db.update(files).set({ thumbKey }).where(eq(files.id, fileId));
+                log(`poster saved as ${THUMB_BUCKET}/${thumbKey}`);
+            }
+        }
+
         const renditions = pickRenditions(probed);
         log(
             `probed ${probed.width}x${probed.height}` +
@@ -347,28 +359,24 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
         });
         log(`encoded in ${formatMs(Date.now() - encodeStartedAt)}`);
 
-        const thumbKey = await makePoster(workdir, probed, log);
         const uploaded = await uploadHls(path.join(workdir, 'hls'), video.hlsPrefix);
         log(`uploaded ${uploaded} files to ${HLS_BUCKET}/${video.hlsPrefix}`);
 
         // Last, so a 'done' row never points at objects that aren't there yet.
         const masterKey = `${video.hlsPrefix}/master.m3u8`;
-        await db.transaction(async (tx) => {
-            await tx
-                .update(fileVideos)
-                .set({
-                    status: 'done',
-                    error: null,
-                    masterKey,
-                    durationMs: probed.durationMs,
-                    width: probed.width,
-                    height: probed.height,
-                    hasAudio: probed.hasAudio,
-                    completedAt: new Date(),
-                })
-                .where(eq(fileVideos.fileId, fileId));
-            if (thumbKey) await tx.update(files).set({ thumbKey }).where(eq(files.id, fileId));
-        });
+        await db
+            .update(fileVideos)
+            .set({
+                status: 'done',
+                error: null,
+                masterKey,
+                durationMs: probed.durationMs,
+                width: probed.width,
+                height: probed.height,
+                hasAudio: probed.hasAudio,
+                completedAt: new Date(),
+            })
+            .where(eq(fileVideos.fileId, fileId));
         log(`done in ${formatMs(Date.now() - startedAt)}, master ${HLS_BUCKET}/${masterKey}`);
     } finally {
         await rm(workdir, { recursive: true, force: true });
