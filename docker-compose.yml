@@ -18,8 +18,11 @@ services:
     command: node_modules/.bin/tsx watch --conditions=development src/index.ts
     ports:
       - "3000-3001:3000"
-    env_file:
-      - apps/api/.env
+    # Secrets come from Doppler at start; see docker/doppler-entrypoint.sh.
+    entrypoint: ["doppler-entrypoint"]
+    secrets:
+      - source: doppler_api
+        target: doppler_token
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,8 +49,11 @@ services:
     # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
     working_dir: /app/apps/worker
     command: node_modules/.bin/tsx watch --conditions=development src/index.ts
-    env_file:
-      - apps/worker/.env
+    # Secrets come from Doppler at start; see docker/doppler-entrypoint.sh.
+    entrypoint: ["doppler-entrypoint"]
+    secrets:
+      - source: doppler_worker
+        target: doppler_token
     depends_on:
       postgres:
         condition: service_healthy
@@ -78,8 +84,11 @@ services:
     # Same as api: tsx directly so SIGTERM reaches the worker's shutdown handler.
     working_dir: /app/apps/video-worker
     command: node_modules/.bin/tsx watch --conditions=development src/index.ts
-    env_file:
-      - apps/video-worker/.env
+    # Secrets come from Doppler at start; see docker/doppler-entrypoint.sh.
+    entrypoint: ["doppler-entrypoint"]
+    secrets:
+      - source: doppler_video_worker
+        target: doppler_token
     depends_on:
       postgres:
         condition: service_healthy
@@ -133,12 +142,21 @@ services:
       retries: 5
 
   storage:
-    image: pgsty/silo:latest
+    image: bonitashare-storage
+    # Stock image plus the Doppler CLI and entrypoint, so its credentials come from Doppler too.
+    build:
+      context: ./docker
+      dockerfile_inline: |
+        FROM pgsty/silo:latest
+        COPY --from=dopplerhq/cli:3.76.5 /bin/doppler /usr/local/bin/doppler
+        COPY --chmod=755 doppler-entrypoint.sh /usr/local/bin/doppler-entrypoint
     container_name: bonitashare-storage
     restart: unless-stopped
-    env_file:
-      - .env.storage
+    entrypoint: ["doppler-entrypoint", "/usr/bin/docker-entrypoint.sh"]
     command: server /data --console-address ":9001"
+    secrets:
+      - source: doppler_storage
+        target: doppler_token
     ports:
       - '9000:9000'
       - '9001:9001'
@@ -151,11 +169,22 @@ services:
       retries: 5
 
   postgres:
-    image: postgres:16-alpine
+    image: bonitashare-postgres
+    # Stock image plus the Doppler CLI and entrypoint, so its credentials come from Doppler too.
+    build:
+      context: ./docker
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        COPY --from=dopplerhq/cli:3.76.5 /bin/doppler /usr/local/bin/doppler
+        COPY --chmod=755 doppler-entrypoint.sh /usr/local/bin/doppler-entrypoint
     container_name: bonitashare-postgres
     restart: unless-stopped
-    env_file:
-      - .env.db
+    # Overriding the entrypoint drops the image's default command, so it is restated.
+    entrypoint: ["doppler-entrypoint", "docker-entrypoint.sh"]
+    command: postgres
+    secrets:
+      - source: doppler_db
+        target: doppler_token
     ports:
       - '5432:5432'
     volumes:
@@ -170,3 +199,16 @@ volumes:
   postgres_data:
   storage_data:
   cache_data:
+
+# Doppler service tokens, one per service's config. Gitignored; mounted at /run/secrets/doppler_token.
+secrets:
+  doppler_api:
+    file: ./secrets/doppler/api
+  doppler_worker:
+    file: ./secrets/doppler/worker
+  doppler_video_worker:
+    file: ./secrets/doppler/video-worker
+  doppler_db:
+    file: ./secrets/doppler/db
+  doppler_storage:
+    file: ./secrets/doppler/storage

@@ -5,3 +5,8 @@
 .gitignore
 *.md
 **/*.tsbuildinfo
+# Secrets reach containers at runtime (Doppler / compose secrets), never through the build context
+**/.env
+**/.env.*
+!**/.env*.example
+secrets

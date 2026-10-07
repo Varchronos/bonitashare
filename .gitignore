@@ -6,3 +6,5 @@ dist/
 .env.*
 !.env*.example
 .pnpm-store
+# Doppler service tokens, mounted into containers as compose secrets
+secrets/
