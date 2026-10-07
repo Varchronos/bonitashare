@@ -35,6 +35,10 @@ const THUMBNAILABLE_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/w
 // Bigger images just go without a thumbnail the file itself is unaffected.
 const MAX_THUMBNAIL_SOURCE_BYTES = 50 * 1024 * 1024;
 
+// Small enough that the original downloads about as fast as the first few HLS segments would, so a
+// transcode only costs a worker slot; the share page plays these directly.
+const MIN_TRANSCODE_SOURCE_BYTES = 5 * 1024 * 1024;
+
 const RECONCILE_EVERY_MS = 5 * 60 * 1000;
 // Well past a normal queue wait, so the sweep mostly finds jobs that were never enqueued.
 // Re-adding one that is merely slow is harmless: the stable jobId makes it a no-op.
@@ -110,7 +114,7 @@ async function processUpload(job: Job<ProcessUploadJob>) {
 
     // The video-worker probes the file itself, so anything claiming to be video is handed over;
     // its poster frame becomes the thumbnail there.
-    if (file.contentType?.startsWith('video/')) {
+    if (file.contentType?.startsWith('video/') && file.sizeBytes >= MIN_TRANSCODE_SOURCE_BYTES) {
         await enqueueTranscode(file.id);
     }
 
