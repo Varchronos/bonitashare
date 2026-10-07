@@ -1,4 +1,4 @@
-import { BUCKET, THUMB_BUCKET, createStorage } from "@bonitashare/core/storage";
+import { BUCKET, HLS_BUCKET, THUMB_BUCKET, createStorage } from "@bonitashare/core/storage";
 
 export const storage = createStorage();
 
@@ -15,6 +15,11 @@ export const publicStorage = createStorage(publicEndpoint.href);
 const THUMB_PUBLIC_BASE_URL = (process.env.THUMB_PUBLIC_BASE_URL || `${publicEndpoint.origin}/${THUMB_BUCKET}`).replace(/\/$/, '');
 
 export const thumbUrl = (thumbKey: string) => `${THUMB_PUBLIC_BASE_URL}/${thumbKey}`;
+
+// Same idea for HLS: the player resolves segment URLs relative to the master playlist, so only it needs building.
+const HLS_PUBLIC_BASE_URL = (process.env.HLS_PUBLIC_BASE_URL || `${publicEndpoint.origin}/${HLS_BUCKET}`).replace(/\/$/, '');
+
+export const hlsUrl = (masterKey: string) => `${HLS_PUBLIC_BASE_URL}/${masterKey}`;
 
 // GetObject only, no ListBucket, so keys can't be enumerated.
 const publicReadPolicy = (bucket: string) =>
@@ -44,5 +49,8 @@ export async function ensureBucket() {
     // left alone, since public access is configured differently per provider (R2 has no bucket policies).
     if (await createBucketIfMissing(THUMB_BUCKET)) {
         await storage.setBucketPolicy(THUMB_BUCKET, publicReadPolicy(THUMB_BUCKET));
+    }
+    if (await createBucketIfMissing(HLS_BUCKET)) {
+        await storage.setBucketPolicy(HLS_BUCKET, publicReadPolicy(HLS_BUCKET));
     }
 }

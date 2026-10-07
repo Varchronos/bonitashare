@@ -18,6 +18,9 @@ export const createVideoProcessingQueue = (connection: Redis) =>
         defaultJobOptions: {
             attempts: 3,
             backoff: { type: 'exponential', delay: 2000 },
+            // Same retention as file-processing, so a finished job's state outlives any sweep window.
+            removeOnComplete: { age: 86_400 },
+            removeOnFail: { age: 7 * 86_400 },
         },
     });
 

@@ -40,6 +40,22 @@ export const files = pgTable('files', {
     index('files_unprocessed_idx').on(table.uploadedAt).where(sql`${table.fileStatus} = 'uploaded' AND ${table.processingStatus} = 'pending'`),
 ]);
 
+// HLS output for video files, written by the video-worker once transcoding finishes.
+export const fileVideos = pgTable('file_videos', {
+    fileId: text('file_id').primaryKey().references(() => files.id, { onDelete: 'cascade' }),
+    status: text('status', { enum: ['pending', 'done', 'failed'] }).notNull().default('pending'),
+    error: text('error'),
+    // Random prefix in the public HLS bucket, chosen at enqueue so every retry writes to the same keys.
+    hlsPrefix: text('hls_prefix').notNull(),
+    masterKey: text('master_key'), // key of the master playlist (.m3u8)
+    durationMs: integer('duration_ms'),
+    width: integer('width'),
+    height: integer('height'),
+    hasAudio: boolean('has_audio'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+});
+
 export const albums = pgTable('albums', {
     id: text('id').primaryKey(),
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
@@ -58,6 +74,7 @@ export const albumFiles = pgTable('album_files', {
 }, (table) => [{
     pk: primaryKey({ columns: [table.albumId, table.fileId] }),
 }]);
+
 
 // Added ahead of the AI summarization phase — status lets the frontend know
 // whether to render a summary, a "processing" placeholder, or nothing.

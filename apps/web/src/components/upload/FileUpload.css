@@ -77,6 +77,18 @@
 	object-fit: cover;
 }
 
+/* 16:9 so a landscape poster shows whole instead of cropped to a square; a portrait one is
+   pillarboxed. Same height as the square icon, so rows stay aligned. */
+.task-icon-video {
+	width: auto;
+	aspect-ratio: 16 / 9;
+}
+
+.task-thumb-video {
+	object-fit: contain;
+	background: #000;
+}
+
 .task-icon-error {
 	background: var(--danger-soft);
 	color: var(--danger);

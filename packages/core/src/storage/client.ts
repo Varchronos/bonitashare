@@ -20,3 +20,7 @@ export const BUCKET = process.env.S3_BUCKET!;
 
 // Anonymous-read bucket so thumbnails are served straight to browsers (and CDNs) without presigning.
 export const THUMB_BUCKET = process.env.S3_THUMB_BUCKET!;
+
+// Anonymous-read bucket for HLS playlists and segments, so players fetch them without presigning
+// every segment. Keys sit under a random per-video prefix, never the share id.
+export const HLS_BUCKET = process.env.S3_HLS_BUCKET!;

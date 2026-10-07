@@ -3,7 +3,7 @@ import { pipeline } from 'node:stream/promises';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import sharp from 'sharp';
 import { and, eq, lt } from 'drizzle-orm';
-import { createDb, files } from '@bonitashare/core/db';
+import { createDb, fileVideos, files } from '@bonitashare/core/db';
 import { nanoid } from 'nanoid';
 import { BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
 import { onShutdown } from '@bonitashare/core/shutdown';
@@ -11,9 +11,12 @@ import {
     FILE_PROCESSING_QUEUE,
     PROCESS_UPLOAD_JOB,
     RECONCILE_UPLOADS_JOB,
+    TRANSCODE_HLS_JOB,
     createFileProcessingQueue,
     createRedis,
+    createVideoProcessingQueue,
     processUploadJobId,
+    transcodeHlsJobId,
     type FileProcessingJobData,
     type FileProcessingJobName,
     type ProcessUploadJob,
@@ -24,11 +27,17 @@ const storage = createStorage();
 const redisConnection = createRedis(process.env.REDIS_URL!);
 // Used to enqueue the reconcile sweep's re-adds and to register its schedule.
 const fileProcessingQueue = createFileProcessingQueue(redisConnection);
+// Transcodes run in the video-worker; this worker only hands them off.
+const videoProcessingQueue = createVideoProcessingQueue(redisConnection);
 
 const THUMBNAILABLE_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']);
 
 // Bigger images just go without a thumbnail the file itself is unaffected.
 const MAX_THUMBNAIL_SOURCE_BYTES = 50 * 1024 * 1024;
+
+// Small enough that the original downloads about as fast as the first few HLS segments would, so a
+// transcode only costs a worker slot; the share page plays these directly.
+const MIN_TRANSCODE_SOURCE_BYTES = 5 * 1024 * 1024;
 
 const RECONCILE_EVERY_MS = 5 * 60 * 1000;
 // Well past a normal queue wait, so the sweep mostly finds jobs that were never enqueued.
@@ -80,17 +89,33 @@ async function generateThumbnail(fileId: string, storageKey: string) {
     await db.update(files).set({ thumbKey }).where(eq(files.id, fileId));
 }
 
+// Row first, then the job: if the add is lost, the 'pending' row is what a sweep can find it by.
+// Both steps are idempotent, so a retried processUpload repeats them safely.
+async function enqueueTranscode(fileId: string) {
+    // Chosen once, before the first attempt, so a retried transcode overwrites its own partial upload
+    // instead of leaving copies under new prefixes. Random for the same reason as thumbKey: the HLS
+    // bucket is public. onConflictDoNothing keeps the first prefix when this runs again.
+    await db.insert(fileVideos).values({ fileId, hlsPrefix: nanoid(21) }).onConflictDoNothing();
+    await videoProcessingQueue.add(TRANSCODE_HLS_JOB, { fileId }, { jobId: transcodeHlsJobId(fileId) });
+}
+
 async function processUpload(job: Job<ProcessUploadJob>) {
     const [file] = await db.select().from(files).where(eq(files.id, job.data.fileId));
     if (!file) return;
 
-    // Video preview generation and AI summaries are handled separately, later.
+    // AI summaries are handled separately, later.
     if (
         file.contentType &&
         THUMBNAILABLE_CONTENT_TYPES.has(file.contentType) &&
         file.sizeBytes <= MAX_THUMBNAIL_SOURCE_BYTES
     ) {
         await generateThumbnail(file.id, file.storageKey);
+    }
+
+    // The video-worker probes the file itself, so anything claiming to be video is handed over;
+    // its poster frame becomes the thumbnail there.
+    if (file.contentType?.startsWith('video/') && file.sizeBytes >= MIN_TRANSCODE_SOURCE_BYTES) {
+        await enqueueTranscode(file.id);
     }
 
     // Part of the job, so a failed write retries it rather than leaving the row for the sweep forever.
@@ -192,6 +217,7 @@ onShutdown('worker', SHUTDOWN_DEADLINE_MS, async () => {
     await worker.close();
     // BullMQ doesn't close a connection it was handed, so the queue and its connection close separately.
     await fileProcessingQueue.close();
+    await videoProcessingQueue.close();
     await redisConnection.quit();
     await pool.end();
 });
@@ -200,7 +226,8 @@ onShutdown('worker', SHUTDOWN_DEADLINE_MS, async () => {
 await fileProcessingQueue.upsertJobScheduler(
     RECONCILE_UPLOADS_JOB,
     { every: RECONCILE_EVERY_MS },
-    { name: RECONCILE_UPLOADS_JOB, data: {}, opts: { attempts: 1 } },
+    // Nothing reads a finished sweep back, so completions go immediately; a few failures stay for debugging.
+    { name: RECONCILE_UPLOADS_JOB, data: {}, opts: { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } } },
 );
 
 console.log('Worker listening on queue:', FILE_PROCESSING_QUEUE);

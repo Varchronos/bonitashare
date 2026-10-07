@@ -18,6 +18,11 @@ export const createFileProcessingQueue = (connection: Redis) =>
         defaultJobOptions: {
             attempts: 3,
             backoff: { type: 'exponential', delay: 2000 },
+            // Kept a day so the reconcile sweep (which looks at rows pending past its 10-minute
+            // window) can still read a finished job's state and repair a lost status write.
+            removeOnComplete: { age: 86_400 },
+            // Longer than completions: past the sweep's needs, failed jobs are kept for debugging.
+            removeOnFail: { age: 7 * 86_400 },
         },
     });
 
