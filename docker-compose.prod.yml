@@ -1,57 +1,147 @@
+# Production stack for the VPS: api, worker, web, Postgres and Redis. Storage is Cloudflare R2, and the
+# video-worker runs on a separate machine (docker-compose.video-worker.yml), reaching Postgres and Redis
+# over the private network.
+#
+# Secrets come from Doppler `prd_*` configs at container start (docker/doppler-entrypoint.sh); the
+# service tokens live in gitignored secrets/doppler/prd/<service>. The keys each config needs are in
+# the matching .env.prod.example files.
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+
 services:
-  api:
-    image: bonitashare-api
-    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
-    init: true
-    stop_grace_period: 30s
+  # Applies pending drizzle migrations, then exits; api and worker wait for it to succeed.
+  migrate:
+    image: bonitashare-api:prod
     build:
       context: .
       dockerfile: apps/api/Dockerfile
       target: runtime
-    ports:
-      - "3000:3000"
-    environment:
-      NODE_ENV: production
-      PORT: "3000"
+    working_dir: /app/packages/core
+    entrypoint: ["doppler-entrypoint"]
+    command: node_modules/.bin/drizzle-kit migrate
+    secrets:
+      - source: doppler_api
+        target: doppler_token
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-  worker:
-    image: bonitashare-worker
+  api:
+    image: bonitashare-api:prod
     # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
     init: true
     stop_grace_period: 30s
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+      target: runtime
+    # Not published: browsers only talk to web, which reaches the api over the compose network.
+    entrypoint: ["doppler-entrypoint"]
+    command: node apps/api/dist/index.js
+    secrets:
+      - source: doppler_api
+        target: doppler_token
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    image: bonitashare-worker:prod
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/worker/Dockerfile
       target: runtime
-    environment:
-      NODE_ENV: production
-
-  video-worker:
-    image: bonitashare-video-worker
-    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
-    init: true
-    stop_grace_period: 30s
-    build:
-      context: .
-      dockerfile: apps/video-worker/Dockerfile
-      target: runtime
-    # 4 CPUs is where the encode stops scaling (16 was only ~20% faster for twice the CPU time), so add
-    # replicas for throughput rather than raising this. The worker reads this limit from cgroups and sizes
-    # ffmpeg's threads to it. 2g covers the ~750MB encode at 4 threads plus 4K sources and node.
-    cpus: 4
-    mem_limit: 2g
-    environment:
-      NODE_ENV: production
+    entrypoint: ["doppler-entrypoint"]
+    command: node apps/worker/dist/index.js
+    secrets:
+      - source: doppler_worker
+        target: doppler_token
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   web:
+    image: bonitashare-web:prod
     # tini as PID 1 so SIGTERM stops node at once instead of after the 10s grace period.
     # No drain yet: in-flight proxied uploads are dropped and resumed by the client.
     init: true
+    restart: unless-stopped
     build:
       context: .
       dockerfile: apps/web/Dockerfile
       target: runtime
+    # The only published app port. Put the TLS reverse proxy in front of this.
     ports:
       - "8080:4321"
     environment:
       API_INTERNAL_URL: http://api:3000
+    depends_on:
+      api:
+        condition: service_healthy
+
+  postgres:
+    image: bonitashare-postgres:prod
+    # Stock image plus the Doppler CLI and entrypoint, so its credentials come from Doppler too.
+    build:
+      context: ./docker
+      dockerfile_inline: |
+        FROM postgres:16-alpine
+        COPY --from=dopplerhq/cli:3.76.5 /bin/doppler /usr/local/bin/doppler
+        COPY --chmod=755 doppler-entrypoint.sh /usr/local/bin/doppler-entrypoint
+    restart: unless-stopped
+    # Overriding the entrypoint drops the image's default command, so it is restated.
+    entrypoint: ["doppler-entrypoint", "docker-entrypoint.sh"]
+    command: postgres
+    secrets:
+      - source: doppler_db
+        target: doppler_token
+    # Loopback by default. Set PRIVATE_BIND_IP to the VPS's private-network (e.g. Tailscale) address so
+    # the remote video-worker can connect; never a public interface.
+    ports:
+      - "${PRIVATE_BIND_IP:-127.0.0.1}:5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      # USER and DB must match POSTGRES_USER / POSTGRES_DB in the prd_db Doppler config.
+      test: [ 'CMD-SHELL', 'pg_isready -U pgdhruv -d bonitasharedb' ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    # Same as postgres: loopback unless PRIVATE_BIND_IP is set. Redis has no password, so this must
+    # stay off public interfaces.
+    ports:
+      - "${PRIVATE_BIND_IP:-127.0.0.1}:6379:6379"
+    volumes:
+      - cache_data:/data
+    healthcheck:
+      test: [ 'CMD', 'redis-cli', 'ping' ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  cache_data:
+
+# Doppler service tokens for the prd_* configs. Gitignored; mounted at /run/secrets/doppler_token.
+secrets:
+  doppler_api:
+    file: ./secrets/doppler/prd/api
+  doppler_worker:
+    file: ./secrets/doppler/prd/worker
+  doppler_db:
+    file: ./secrets/doppler/prd/db

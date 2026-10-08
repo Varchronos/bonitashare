@@ -1,0 +1,32 @@
+# Production video-worker, run on the transcoding machine rather than the VPS. It needs outbound access
+# to R2 and Doppler, and reaches the VPS's Postgres and Redis over the private network (DATABASE_URL and
+# REDIS_URL in the prd_video-worker Doppler config). Jobs wait in the queue while this machine is off.
+#
+#   docker compose -f docker-compose.video-worker.yml up -d --build
+
+services:
+  video-worker:
+    image: bonitashare-video-worker:prod
+    # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
+    init: true
+    stop_grace_period: 30s
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/video-worker/Dockerfile
+      target: runtime
+    # 4 CPUs is where the encode stops scaling (16 was only ~20% faster for twice the CPU time), so add
+    # replicas for throughput rather than raising this. The worker reads this limit from cgroups and sizes
+    # ffmpeg's threads to it. 2g covers the ~750MB encode at 4 threads plus 4K sources and node.
+    cpus: 4
+    mem_limit: 2g
+    entrypoint: ["doppler-entrypoint"]
+    command: node apps/video-worker/dist/index.js
+    secrets:
+      - source: doppler_video_worker
+        target: doppler_token
+
+# Doppler service token for the prd_video-worker config. Gitignored; mounted at /run/secrets/doppler_token.
+secrets:
+  doppler_video_worker:
+    file: ./secrets/doppler/prd/video-worker
