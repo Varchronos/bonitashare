@@ -163,6 +163,8 @@ secrets:
     file: ./secrets/doppler/prod/worker
   doppler_db:
     file: ./secrets/doppler/prod/db
-  # Token of the Cloudflare tunnel (Zero Trust -> Networks -> Tunnels). Gitignored.
+  # Token of the Cloudflare tunnel (Zero Trust -> Networks -> Tunnels). Gitignored. cloudflared runs as
+  # a non-root user and file secrets keep their host permissions, so the file must be world-readable
+  # (644); keep its directory 700 so other host users still can't reach it.
   tunnel_token:
     file: ./secrets/cloudflared/tunnel_token
