@@ -1,12 +1,16 @@
-# Production stack for the VPS: api, worker, web, Postgres and Redis. Storage is Cloudflare R2, and the
-# video-worker runs on a separate machine (docker-compose.video-worker.yml), reaching Postgres and Redis
-# over the private network.
+# Production stack for the VPS: api, worker, web, Postgres, Redis and the Cloudflare Tunnel. Storage is
+# Cloudflare R2, and the video-worker runs on a separate machine (docker-compose.video-worker.yml),
+# reaching Postgres and Redis over the private network. To run it all on one machine instead, see
+# docker-compose.prod.local.yml.
 #
 # Secrets come from Doppler `prd_*` configs at container start (docker/doppler-entrypoint.sh); the
-# service tokens live in gitignored secrets/doppler/prd/<service>. The keys each config needs are in
+# service tokens live in gitignored secrets/doppler/prod/<service>. The keys each config needs are in
 # the matching .env.prod.example files.
 #
 #   docker compose -f docker-compose.prod.yml up -d --build
+
+# Fixed so prod never shares containers or volumes with the dev project (named after the directory).
+name: bonitashare-prod
 
 services:
   # Applies pending drizzle migrations, then exits; api and worker wait for it to succeed.
@@ -79,13 +83,27 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
       target: runtime
-    # The only published app port. Put the TLS reverse proxy in front of this.
-    ports:
-      - "8080:4321"
+    # Not published: cloudflared reaches it over the compose network.
     environment:
       API_INTERNAL_URL: http://api:3000
     depends_on:
       api:
+        condition: service_healthy
+
+  # Cloudflare Tunnel: dials out to Cloudflare, which terminates TLS and forwards requests here, so the
+  # VM needs no inbound ports. Cloudflare caps request bodies at 100 MB, so tus chunks must stay below that.
+  cloudflared:
+    image: cloudflare/cloudflared:2026.10.0
+    restart: unless-stopped
+    # Shares web's network namespace, so the tunnel's public hostname route (set in the Cloudflare
+    # dashboard) points at http://localhost:4321. Recreating web alone (`up web`) leaves this attached to the
+    # old container's namespace and the site returns 502, so recreate cloudflared with it.
+    network_mode: service:web
+    command: tunnel --no-autoupdate run --token-file /run/secrets/tunnel_token
+    secrets:
+      - tunnel_token
+    depends_on:
+      web:
         condition: service_healthy
 
   postgres:
@@ -140,8 +158,11 @@ volumes:
 # Doppler service tokens for the prd_* configs. Gitignored; mounted at /run/secrets/doppler_token.
 secrets:
   doppler_api:
-    file: ./secrets/doppler/prd/api
+    file: ./secrets/doppler/prod/api
   doppler_worker:
-    file: ./secrets/doppler/prd/worker
+    file: ./secrets/doppler/prod/worker
   doppler_db:
-    file: ./secrets/doppler/prd/db
+    file: ./secrets/doppler/prod/db
+  # Token of the Cloudflare tunnel (Zero Trust -> Networks -> Tunnels). Gitignored.
+  tunnel_token:
+    file: ./secrets/cloudflared/tunnel_token

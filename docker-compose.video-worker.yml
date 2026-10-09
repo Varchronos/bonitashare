@@ -4,6 +4,9 @@
 #
 #   docker compose -f docker-compose.video-worker.yml up -d --build
 
+# Fixed so it never mixes with a dev project on the same machine.
+name: bonitashare-video-worker
+
 services:
   video-worker:
     image: bonitashare-video-worker:prod
@@ -29,4 +32,4 @@ services:
 # Doppler service token for the prd_video-worker config. Gitignored; mounted at /run/secrets/doppler_token.
 secrets:
   doppler_video_worker:
-    file: ./secrets/doppler/prd/video-worker
+    file: ./secrets/doppler/prod/video-worker

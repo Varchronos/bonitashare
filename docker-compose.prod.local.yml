@@ -1,0 +1,25 @@
+# Runs the whole prod stack, video-worker included, on one machine (e.g. while there is no VPS). Layer it
+# last, over the other two files:
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.video-worker.yml \
+#     -f docker-compose.prod.local.yml up -d --build
+#
+# The video-worker joins the stack's network here, so prd_video-worker's DATABASE_URL and REDIS_URL must
+# use the postgres and redis hostnames rather than the VPS's private IP.
+
+# Last file wins, so this keeps everything in the prod project rather than the video-worker's.
+name: bonitashare-prod
+
+services:
+  # Only the stack itself talks to them, and a dev stack on the same machine already holds these ports.
+  postgres:
+    ports: !reset []
+  redis:
+    ports: !reset []
+
+  video-worker:
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy

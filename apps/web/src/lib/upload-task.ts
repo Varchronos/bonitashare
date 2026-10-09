@@ -105,7 +105,7 @@ export function enqueueFile(file: File): string {
     const upload = new tus.Upload(file, {
         endpoint: '/api/upload',
         metadata: { filename: file.name, filetype: file.type },
-        chunkSize: 5 * 1024 * 1024,
+        chunkSize: 8 * 1024 * 1024,
         retryDelays: [0, 1000, 3000, 5000],
         onShouldRetry: shouldRetryUpload,
         onBeforeRequest: async () => { await sessionRenewal },
