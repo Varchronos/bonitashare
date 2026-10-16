@@ -15,7 +15,7 @@ const SESSION_COOKIE = 'session';
 export async function getSession(Astro: AstroGlobal) {
 	let cookie = Astro.request.headers.get('cookie') ?? '';
 
-	const res = await fetch(`${process.env.API_INTERNAL_URL}/session`, {
+	const res = await fetch(`${process.env.API_INTERNAL_URL}/api/v1/session`, {
 		headers: { cookie },
 	});
 

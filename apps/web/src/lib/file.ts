@@ -28,7 +28,7 @@ export type FileVideo = {
 export async function getFileLink(Astro: AstroGlobal, id: string) {
 	const { cookie } = await refreshSession(Astro);
 
-	const res = await fetch(`${process.env.API_INTERNAL_URL}/download/${id}`, {
+	const res = await fetch(`${process.env.API_INTERNAL_URL}/api/v1/download/${id}`, {
 		headers: { cookie },
 	});
 
@@ -38,7 +38,7 @@ export async function getFileLink(Astro: AstroGlobal, id: string) {
 // The HLS stream for a video file. Only worth calling once getFileLink has
 // said the file is a video; anything else is a VIDEO_NOT_FOUND.
 export async function getFileVideo(cookie: string, id: string): Promise<ApiResponse<FileVideo>> {
-	const res = await fetch(`${process.env.API_INTERNAL_URL}/download/${id}/video`, {
+	const res = await fetch(`${process.env.API_INTERNAL_URL}/api/v1/download/${id}/video`, {
 		headers: { cookie },
 	});
 

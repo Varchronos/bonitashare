@@ -16,8 +16,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = Fastify({ logger: true });
 
-// Public and session-free. Sessions are only ever issued by GET /session;
-// other routes opt into requireSession/optionalSession themselves.
+// Public and session-free, and outside /api/v1 so container healthchecks don't track API versions.
+// Sessions are only ever issued by GET /api/v1/session; other routes opt into
+// requireSession/optionalSession themselves.
 app.get("/health", async (): Promise<ApiResponse<{ status: "ok" }>> => {
   return { data: { status: "ok" }, error: null };
 });
@@ -36,8 +37,10 @@ app.addContentTypeParser(
 );
 
 
+// Every route file is served under /api/v1, matching the paths the browser uses on the web app.
 app.register(autoload, {
-  dir: path.join(__dirname, 'routes')
+  dir: path.join(__dirname, 'routes'),
+  options: { prefix: '/api/v1' },
 })
 
 
@@ -50,9 +53,9 @@ const DRAIN_TIMEOUT_MS = 20_000;
 
 onShutdown("api", SHUTDOWN_DEADLINE_MS, async () => {
   // From here Fastify answers every new request (tus POSTs included) with 503 + Connection: close
-  // before any handler runs, and waits for in-flight ones. A tus PATCH is one 5MB chunk, so the
-  // wait is normally seconds; clients resume the rest of their upload from another replica or
-  // after restart.
+  // before any handler runs, and waits for in-flight ones. A tus PATCH can carry up to 88 MiB, so
+  // on a slow connection it may outlast the drain; tus keeps what arrived either way, and clients
+  // resume the rest of their upload from another replica or after restart.
   // Past the drain timeout, cut the stragglers. Unlike a SIGKILL, tus still runs its cleanup and
   // releases the upload lock, so the client's resume doesn't have to wait out the lock TTL.
   const drainTimer = setTimeout(() => {

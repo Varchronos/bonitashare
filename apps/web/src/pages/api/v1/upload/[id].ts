@@ -1,7 +1,7 @@
 import type { APIRoute } from 'astro';
-import { proxyTus } from '../../../lib/tusProxy';
+import { proxyTus } from '../../../../lib/tusProxy';
 
-const forward: APIRoute = ({ request, params }) => proxyTus(request, `/upload/${params.id}`);
+const forward: APIRoute = ({ request, params }) => proxyTus(request, `/api/v1/upload/${params.id}`);
 
 export const GET = forward;
 export const HEAD = forward;

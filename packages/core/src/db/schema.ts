@@ -4,6 +4,10 @@ import { sql } from 'drizzle-orm';
 export const users = pgTable('users', {
     id: uuid('id').primaryKey().defaultRandom(),
     email: text('email').unique(),
+    // Anonymous isn't a plan: it's implied by a null email.
+    plan: text('plan', { enum: ['free', 'pro'] }).notNull().default('free'),
+    // Null for free. Pro only counts while this is in the future, so a missed payment webhook can't leave it on forever.
+    planExpiresAt: timestamp('plan_expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index('users_with_email_idx').on(table.email).where(sql`${table.email} IS NOT NULL`)]);
 

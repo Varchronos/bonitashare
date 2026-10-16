@@ -1,8 +1,12 @@
 // Generic tus-protocol reverse proxy: browser <-> Astro <-> internal API.
 // The internal API isn't reachable from the browser directly (see
-// pages/api/upload.ts's original comment), so every tus method (POST,
+// pages/api/v1/upload.ts's original comment), so every tus method (POST,
 // HEAD, PATCH, DELETE, OPTIONS) needs to pass through here, headers and
 // body intact in both directions.
+//
+// In prod the Cloudflare Tunnel sends /api/v1/upload* straight to the API, so this only carries uploads
+// in dev (and if that tunnel rule is missing). It holds each request body in memory while forwarding
+// it — fine for one dev user, but not something to route production uploads through.
 
 const STRIP_REQUEST_HEADERS = new Set(['host', 'connection', 'content-length', 'transfer-encoding']);
 
@@ -27,15 +31,6 @@ export async function proxyTus(request: Request, targetPath: string): Promise<Re
 		responseHeaders.set(key, value);
 	}
 	for (const cookie of res.headers.getSetCookie()) responseHeaders.append('set-cookie', cookie);
-
-	// The internal API doesn't know it's mounted behind /api/upload here, so
-	// its Location always points at its own /upload/<id> — rewrite it to
-	// the path the browser actually needs to PATCH/HEAD/DELETE against.
-	const location = res.headers.get('location');
-	if (location) {
-		const id = location.split('/').filter(Boolean).pop();
-		responseHeaders.set('location', `/api/upload/${id}`);
-	}
 
 	return new Response(res.body, { status: res.status, headers: responseHeaders });
 }

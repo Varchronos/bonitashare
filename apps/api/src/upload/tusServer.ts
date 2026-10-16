@@ -3,7 +3,8 @@ import { S3Store, type MetadataValue } from '@tus/s3-store';
 import { nanoid } from 'nanoid';
 import { eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { files, users } from '@bonitashare/core/db';
+import { files } from '@bonitashare/core/db';
+import { TIER_LIMITS, type Tier } from '@bonitashare/shared-types';
 import { BUCKET } from '@bonitashare/core/storage';
 import { PROCESS_UPLOAD_JOB, processUploadJobId } from '@bonitashare/core/queue';
 import { fileProcessingQueue } from '@/queue/client.js';
@@ -13,8 +14,15 @@ import { ExpiringRedisKvStore } from './redisKvStore.js';
 
 const endpoint = new URL(process.env.S3_ENDPOINT!);
 
-function getUserId(req: { runtime?: { node?: { req: unknown } } }): string | null {
+// Both are stashed on the Node request by the upload route.
+type TusRequest = { runtime?: { node?: { req: unknown } } };
+
+function getUserId(req: TusRequest): string | null {
     return (req.runtime?.node?.req as { userId?: string | null } | undefined)?.userId ?? null;
+}
+
+function getTier(req: TusRequest): Tier {
+    return (req.runtime?.node?.req as { tier?: Tier | null } | undefined)?.tier ?? 'anonymous';
 }
 
 // Separate from the BullMQ connection: lock and metadata calls should fail fast, not retry forever.
@@ -50,22 +58,27 @@ const UPLOAD_KEY_PREFIX = 'uploads/';
 
 const toShareId = (uploadId: string) => uploadId.slice(UPLOAD_KEY_PREFIX.length);
 
-// Uploads by anonymous users (no email) expire; account holders' uploads don't.
-const ANONYMOUS_UPLOAD_TTL_DAYS = Number(process.env.ANONYMOUS_UPLOAD_TTL_DAYS);
-if (!Number.isFinite(ANONYMOUS_UPLOAD_TTL_DAYS) || ANONYMOUS_UPLOAD_TTL_DAYS <= 0) {
-    throw new Error('ANONYMOUS_UPLOAD_TTL_DAYS must be a positive number of days');
-}
+// Sent by the client as tus metadata, in seconds. Tiers without custom expiry always get their
+// maximum; the others get what they asked for, capped at it, or the maximum when they don't ask.
+const EXPIRES_IN_METADATA = 'expiresIn';
 
-async function expiryFor(userId: string | null): Promise<Date | null> {
-    if (userId) {
-        const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
-        if (user?.email) return null;
+function expiryFor(tier: Tier, requested: string | null | undefined): Date | null {
+    const { maxExpirySeconds, customExpiry } = TIER_LIMITS[tier];
+
+    let seconds: number | null = maxExpirySeconds;
+    if (customExpiry && requested != null) {
+        const asked = Number(requested);
+        if (!Number.isInteger(asked) || asked <= 0) {
+            throw { status_code: 400, body: `Upload-Metadata '${EXPIRES_IN_METADATA}' must be a whole number of seconds\n` };
+        }
+        seconds = maxExpirySeconds === null ? asked : Math.min(asked, maxExpirySeconds);
     }
-    return new Date(Date.now() + ANONYMOUS_UPLOAD_TTL_DAYS * 24 * 60 * 60 * 1000);
+    return seconds === null ? null : new Date(Date.now() + seconds * 1000);
 }
 
 export const tusServer = new Server({
-    path: '/upload',
+    // The full public path: the upload routes sit under autoload's /api/v1 prefix (see index.ts).
+    path: '/api/v1/upload',
     datastore,
     // Shared across replicas so a retried PATCH on another replica can't write alongside the original.
     locker: new RedisLocker(tusRedis, lockSubscriber),
@@ -88,17 +101,22 @@ export const tusServer = new Server({
             throw { status_code: 400, body: "Upload-Metadata must include 'filename'\n" };
         }
 
-        const userId = getUserId(req);
+        const tier = getTier(req);
+        if (upload.size > TIER_LIMITS[tier].maxFileBytes) {
+            // 413 rather than 429: the client retries 429s, and retrying can't make the file smaller.
+            throw { status_code: 413, body: 'File is larger than your plan allows\n' };
+        }
+        const expiresAt = expiryFor(tier, upload.metadata?.[EXPIRES_IN_METADATA]);
 
         await db.insert(files).values({
             id: toShareId(upload.id),
-            ownerId: userId,
+            ownerId: getUserId(req),
             storageKey: upload.id,
             filename,
             contentType: upload.metadata?.filetype ?? null,
             sizeBytes: upload.size,
             fileStatus: 'uploading',
-            expiresAt: await expiryFor(userId),
+            expiresAt,
         });
 
         return {};

@@ -7,8 +7,8 @@
     "build": "pnpm -r run build",
     "typecheck": "pnpm --filter @bonitashare/shared-types --filter @bonitashare/core run build && pnpm -r run typecheck",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "db:generate": "docker compose exec -w /app/packages/core api pnpm drizzle-kit generate",
-    "db:migrate": "docker compose exec -w /app/packages/core api pnpm drizzle-kit migrate",
+    "db:generate": "docker compose exec -w /app/packages/core api doppler-entrypoint pnpm drizzle-kit generate",
+    "db:migrate": "docker compose exec -w /app/packages/core api doppler-entrypoint pnpm drizzle-kit migrate",
     "db:studio": "pnpm --filter @bonitashare/core run db:studio"
   },
   "keywords": [],

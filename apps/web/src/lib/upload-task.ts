@@ -76,7 +76,7 @@ const liveUploads = new Map<string, tus.Upload>()
 let sessionRenewal: Promise<unknown> | null = null
 
 function renewSession() {
-    sessionRenewal ??= fetch('/api/session').finally(() => { sessionRenewal = null })
+    sessionRenewal ??= fetch('/api/v1/session').finally(() => { sessionRenewal = null })
     return sessionRenewal
 }
 
@@ -103,9 +103,13 @@ export function enqueueFile(file: File): string {
     const { addFiles, updateFile } = useUploadStore.getState()
 
     const upload = new tus.Upload(file, {
-        endpoint: '/api/upload',
+        endpoint: '/api/v1/upload',
         metadata: { filename: file.name, filetype: file.type },
-        chunkSize: 8 * 1024 * 1024,
+        // Cloudflare rejects request bodies over 100 MB, so this is the biggest chunk that fits, kept to
+        // whole 8 MiB storage parts so a chunk never leaves a partial part for the next to re-read.
+        // Most files go up in one request, which the server streams to storage part by part as it
+        // arrives; bigger ones pay the per-request wait once every 88 MiB instead of every 8.
+        chunkSize: 32 * 1024 * 1024,
         retryDelays: [0, 1000, 3000, 5000],
         onShouldRetry: shouldRetryUpload,
         onBeforeRequest: async () => { await sessionRenewal },
@@ -114,7 +118,12 @@ export function enqueueFile(file: File): string {
         onUploadUrlAvailable: () => updateFile(id, { tusUploadUrl: upload.url ?? '' }),
         onProgress: (bytesUploaded) => updateFile(id, { status: 'uploading', bytesUploaded }),
         onSuccess: () => updateFile(id, { status: 'done', bytesUploaded: file.size }),
-        onError: (err) => updateFile(id, { status: 'error', errorMessage: err.message }),
+        // The server's own explanation (file too large for the plan, …) when it sent one; tus's
+        // message is a dump of the request.
+        onError: (err) => {
+            const reason = 'originalResponse' in err ? err.originalResponse?.getBody()?.trim() : null
+            updateFile(id, { status: 'error', errorMessage: reason || err.message })
+        },
     })
 
     liveUploads.set(id, upload)
@@ -184,7 +193,7 @@ export async function watchThumbnail(id: string, signal: AbortSignal) {
         await new Promise((resolve) => setTimeout(resolve, delay))
         if (signal.aborted) return
         try {
-            const res = await fetch(`/api/thumbnail/${shareId}`, { signal })
+            const res = await fetch(`/api/v1/thumbnail/${shareId}`, { signal })
             // 404/410: the file is gone or not visible to us; polling won't change that.
             if (!res.ok) return
             const { data } = (await res.json()) as ApiResponse<{ thumbnailUrl: string | null }>

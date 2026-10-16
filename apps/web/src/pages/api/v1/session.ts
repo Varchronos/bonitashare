@@ -3,7 +3,7 @@ import type { APIRoute } from 'astro';
 // Browser-reachable proxy to the API's GET /session, so client code can
 // renew an expired session mid-flight (see upload-task's 401 handling).
 export const GET: APIRoute = async ({ request }) => {
-	const res = await fetch(`${process.env.API_INTERNAL_URL}/session`, {
+	const res = await fetch(`${process.env.API_INTERNAL_URL}/api/v1/session`, {
 		headers: { cookie: request.headers.get('cookie') ?? '' },
 	});
 
