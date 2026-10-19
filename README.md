@@ -60,5 +60,27 @@ pnpm build          # production build of all packages
   straight from `src/`. Edits to core hot-reload without a rebuild. Production and `tsc` use core's
   `dist/`, so run `pnpm typecheck` (or `pnpm --filter @bonitashare/core dev` to rebuild on save) to
   get core changes into editor types.
-- `docker compose -f docker-compose.prod.yml build` builds the production images. They can't boot yet,
-  because there is no prod env or infra.
+- `docker compose -f docker-compose.prod.yml build` builds the production images locally.
+
+## Deploying
+
+Every push to `main` runs `.github/workflows/deploy.yml`: typecheck, build the api/worker/web images
+and push them to GHCR tagged with the commit, then SSH to the VPS, where `deploy/deploy.sh` checks out
+that commit, pulls its images and restarts what changed (migrations run first). To roll back, run
+`~/bonitashare/deploy/deploy.sh <older full commit sha>` on the VPS; migrations are not undone.
+
+One-time setup:
+
+1. Make a key just for deploys: `ssh-keygen -t ed25519 -N '' -f deploy_key -C github-deploy`.
+2. On the VPS, add `deploy_key.pub` to `~/.ssh/authorized_keys` with a forced command, so the key can
+   only deploy:
+   `command="/home/admin/bonitashare/deploy/deploy.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty ssh-ed25519 AAAA... github-deploy`
+3. In the repo's Settings → Secrets and variables → Actions, add `DEPLOY_SSH_KEY` (contents of
+   `deploy_key`), `DEPLOY_HOST` (`admin@<VPS IP>`) and `DEPLOY_KNOWN_HOSTS` (the VPS's line from your
+   `~/.ssh/known_hosts`, or `ssh-keyscan -t ed25519 <VPS IP>` checked against it).
+4. Let the VPS pull the images: either make the `bonitashare-api`, `-worker` and `-web` packages public
+   (GitHub → Packages → package settings; they hold no secrets), or run `docker login ghcr.io` on the
+   VPS with a token that has only `read:packages`.
+5. The VPS fetches the commit with `git fetch`, so its checkout needs a remote it can read without
+   your keys. The repo is public, so HTTPS works:
+   `git remote set-url origin https://github.com/Varchronos/bonitashare.git`.

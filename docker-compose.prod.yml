@@ -8,6 +8,9 @@
 # the matching .env.prod.example files.
 #
 #   docker compose -f docker-compose.prod.yml up -d --build
+#
+# On the VPS, deploys don't build: CI pushes the api/worker/web images to GHCR and deploy/deploy.sh pulls
+# them by commit, setting IMAGE_PREFIX and IMAGE_TAG. Unset, they fall back to locally built :prod images.
 
 # Fixed so prod never shares containers or volumes with the dev project (named after the directory).
 name: bonitashare-prod
@@ -15,7 +18,7 @@ name: bonitashare-prod
 services:
   # Applies pending drizzle migrations, then exits; api and worker wait for it to succeed.
   migrate:
-    image: bonitashare-api:prod
+    image: ${IMAGE_PREFIX:-}bonitashare-api:${IMAGE_TAG:-prod}
     build:
       context: .
       dockerfile: apps/api/Dockerfile
@@ -31,7 +34,7 @@ services:
         condition: service_healthy
 
   api:
-    image: bonitashare-api:prod
+    image: ${IMAGE_PREFIX:-}bonitashare-api:${IMAGE_TAG:-prod}
     # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
     init: true
     stop_grace_period: 30s
@@ -53,7 +56,7 @@ services:
         condition: service_healthy
 
   worker:
-    image: bonitashare-worker:prod
+    image: ${IMAGE_PREFIX:-}bonitashare-worker:${IMAGE_TAG:-prod}
     # tini as PID 1 so SIGTERM reaches node; the grace period outlasts the app's 28s shutdown deadline.
     init: true
     stop_grace_period: 30s
@@ -74,7 +77,7 @@ services:
         condition: service_healthy
 
   web:
-    image: bonitashare-web:prod
+    image: ${IMAGE_PREFIX:-}bonitashare-web:${IMAGE_TAG:-prod}
     # tini as PID 1 so SIGTERM stops node at once instead of after the 10s grace period.
     # No drain yet: in-flight proxied uploads are dropped and resumed by the client.
     init: true

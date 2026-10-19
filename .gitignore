@@ -8,3 +8,7 @@ dist/
 .pnpm-store
 # Doppler service tokens, mounted into containers as compose secrets
 secrets/
+
+# Deploy SSH keys, in case one is generated in the repo again
+deploy_key
+deploy_key.pub
