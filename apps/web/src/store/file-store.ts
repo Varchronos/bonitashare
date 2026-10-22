@@ -74,10 +74,14 @@ export const useUploadStore = create<FileUploadStore>()(
         // including addFiles/updateFile/removeFile/clear — and IndexedDB's
         // structured clone throws on functions ("Function object could not
         // be cloned"). Only the data needs to survive a reload.
+        // Finished uploads aren't persisted: the server lists them (GET /files),
+        // so IndexedDB only ever holds the few uploads still in flight, however
+        // many files the user has. Done rows stay in memory until the page
+        // closes, so they keep their link and thumbnail polling meanwhile.
         // Cast needed because persist's default typing expects partialize to
         // return the full store shape; the actual rehydrate merge only ever
         // needs `files` — the actions always come from the live store.
-        partialize: (state) => ({ files: state.files }) as FileUploadStore,
+        partialize: (state) => ({ files: state.files.filter((f) => f.status !== 'done') }) as FileUploadStore,
     }
     )
 )

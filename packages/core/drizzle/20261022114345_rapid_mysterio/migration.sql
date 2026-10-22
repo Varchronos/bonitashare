@@ -1,0 +1,1 @@
+CREATE INDEX "files_owner_uploaded_idx" ON "files" ("owner_id","uploaded_at" DESC NULLS LAST,"id" DESC NULLS LAST) WHERE "file_status" = 'uploaded';

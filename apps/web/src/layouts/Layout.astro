@@ -4,11 +4,16 @@ import '../styles/global.css';
 
 interface Props {
 	title?: string;
+	// Search results and link previews. Falls back to a line about the site.
+	description?: string;
 	// Absolute URL; left out entirely when absent so unfurlers don't get an empty image.
 	ogImage?: string | null;
 }
 
-const { title, ogImage } = Astro.props;
+const DEFAULT_DESCRIPTION = 'Share files fast: drop them in and get a link. No install needed.';
+
+const { title, description = DEFAULT_DESCRIPTION, ogImage } = Astro.props;
+const fullTitle = title ? `${title} · bonitashare` : 'bonitashare';
 ---
 
 <!doctype html>
@@ -19,8 +24,13 @@ const { title, ogImage } = Astro.props;
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="generator" content={Astro.generator} />
-		<title>{title ? `${title} · bonitashare` : 'bonitashare'}</title>
+		<title>{fullTitle}</title>
+		<meta name="description" content={description} />
+		<meta property="og:site_name" content="bonitashare" />
+		<meta property="og:title" content={title ?? 'bonitashare'} />
+		<meta property="og:description" content={description} />
 		{ogImage && <meta property="og:image" content={ogImage} />}
+		{ogImage && <meta name="twitter:card" content="summary_large_image" />}
 	</head>
 	<body>
 		<Navbar />

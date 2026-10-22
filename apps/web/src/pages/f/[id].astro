@@ -1,0 +1,190 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import { formatBytes } from "@bonitashare/shared-types";
+import { getFileLink, getFileVideo } from "../../lib/file";
+
+const { id } = Astro.params;
+const { data: file, error, cookie } = await getFileLink(Astro, id!);
+
+if (!file) {
+	Astro.response.status = error?.code === "FILE_EXPIRED" ? 410 : 404;
+}
+
+const isImage = file?.contentType?.startsWith("image/") ?? false;
+const isVideo = file?.contentType?.startsWith("video/") ?? false;
+const isAudio = file?.contentType?.startsWith("audio/") ?? false;
+
+// Only the stream URL is decided here; hls.js attaches in the browser (see the script below).
+// Anything short of a finished transcode plays the original file directly.
+const video = isVideo ? (await getFileVideo(cookie, id!)).data : null;
+const hlsUrl = video?.hlsUrl ?? null;
+
+// Link previews: the thumbnail, or for an image without one yet (the worker makes it shortly after
+// upload, which is when links get shared) the image itself if it's small enough for unfurlers to fetch.
+const OG_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const ogImage = file?.thumbnailUrl ?? (isImage && file && file.sizeBytes <= OG_IMAGE_MAX_BYTES ? file.url : null);
+
+// Private and missing files get the same text as each other, so a preview doesn't reveal which it is.
+const kind = isImage ? "Image" : isVideo ? "Video" : isAudio ? "Audio" : "File";
+const description = file
+	? `${kind} shared on bonitashare · ${formatBytes(file.sizeBytes)}${file.contentType ? ` · ${file.contentType}` : ""}`
+	: error?.code === "FILE_EXPIRED"
+		? "This file has expired and is no longer available."
+		: "This file doesn't exist or isn't available.";
+---
+
+<Layout title={file?.filename ?? "File not found"} description={description} ogImage={ogImage}>
+	<section class="container page">
+		{
+			file ? (
+				<>
+					<h1>{file.filename}</h1>
+					<p class="meta">
+						{formatBytes(file.sizeBytes)}
+						{file.contentType ? ` · ${file.contentType}` : ""}
+					</p>
+
+					<div class="preview">
+						{isImage && <img src={file.url} alt={file.filename} />}
+						{isVideo &&
+							(hlsUrl ? (
+								<video
+									data-hls-src={hlsUrl}
+									data-fallback-src={file.url}
+									poster={file.thumbnailUrl ?? undefined}
+									width={video?.width ?? undefined}
+									height={video?.height ?? undefined}
+									controls
+									playsinline
+									preload="metadata"
+								/>
+							) : (
+								<>
+									<video
+										src={file.url}
+										poster={file.thumbnailUrl ?? undefined}
+										controls
+										playsinline
+										preload="metadata"
+									/>
+									{video?.status === "pending" && (
+										<p class="note">
+											A streaming version is still processing. Playing the
+											original for now.
+										</p>
+									)}
+								</>
+							))}
+						{isAudio && <audio src={file.url} controls />}
+						{!isImage && !isVideo && !isAudio && (
+							<p class="no-preview">
+								No preview available for this file type.
+							</p>
+						)}
+					</div>
+
+					<a class="btn btn-primary" href={file.url}>
+						Download file
+					</a>
+				</>
+			) : (
+				<>
+					<h1>
+						{error?.code === "FILE_EXPIRED"
+							? "This link has expired"
+							: "File not found"}
+					</h1>
+					<p class="meta">
+						{error?.code === "FILE_EXPIRED"
+							? "The file this link pointed to is no longer available."
+							: "This link doesn't point to a file we have — check that you copied it correctly."}
+					</p>
+				</>
+			)
+		}
+	</section>
+</Layout>
+
+<script>
+	const player = document.querySelector<HTMLVideoElement>("video[data-hls-src]");
+
+	if (player) {
+		const src = player.dataset.hlsSrc!;
+		// Presigned URL of the original; used when the stream can't be played at all.
+		const fallback = player.dataset.fallbackSrc!;
+
+		// Imported only on pages with a stream, so other file pages don't download hls.js.
+		const { default: Hls } = await import("hls.js");
+
+		// hls.js first, even where the browser plays HLS natively (Safari): it picks renditions more
+		// smoothly and handles errors the same way everywhere. Native is for iOS versions without MSE.
+		if (Hls.isSupported()) {
+			const hls = new Hls();
+			hls.on(Hls.Events.ERROR, (_event, data) => {
+				// Non-fatal errors (a slow segment, a rendition switch) hls.js recovers from itself.
+				if (!data.fatal) return;
+				console.error("HLS playback failed, falling back to the original", data);
+				hls.destroy();
+				player.src = fallback;
+			});
+			hls.loadSource(src);
+			hls.attachMedia(player);
+		} else if (player.canPlayType("application/vnd.apple.mpegurl")) {
+			player.src = src;
+		} else {
+			player.src = fallback;
+		}
+	}
+</script>
+
+<style>
+	.page {
+		max-width: 640px;
+		padding-top: 48px;
+		padding-bottom: 48px;
+	}
+
+	h1 {
+		margin: 0 0 8px;
+		word-break: break-word;
+	}
+
+	.meta {
+		margin: 0 0 24px;
+		color: var(--muted);
+		font-size: 0.9rem;
+	}
+
+	.preview {
+		margin-bottom: 24px;
+	}
+
+	.preview img,
+	.preview video {
+		max-width: 100%;
+		/* With width/height set from the probe, the box keeps the video's aspect ratio before it loads. */
+		height: auto;
+		border-radius: var(--radius);
+		display: block;
+	}
+
+	.note {
+		margin: 8px 0 0;
+		color: var(--muted);
+		font-size: 0.85rem;
+	}
+
+	.preview audio {
+		width: 100%;
+	}
+
+	.no-preview {
+		margin: 0;
+		padding: 24px;
+		border: 1px solid var(--border);
+		border-radius: var(--radius);
+		background: var(--surface);
+		color: var(--muted);
+		text-align: center;
+	}
+</style>

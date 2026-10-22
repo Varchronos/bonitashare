@@ -42,6 +42,10 @@ export const files = pgTable('files', {
     index('files_expires_at_idx').on(table.expiresAt).where(sql`${table.expiresAt} IS NOT NULL`),
     // Backs the reconcile sweep, which only ever looks for uploaded files still awaiting processing.
     index('files_unprocessed_idx').on(table.uploadedAt).where(sql`${table.fileStatus} = 'uploaded' AND ${table.processingStatus} = 'pending'`),
+    // Backs the storage quota sum over a user's files.
+    index('files_owner_id_idx').on(table.ownerId).where(sql`${table.ownerId} IS NOT NULL`),
+    // Backs the newest-first, keyset-paginated list of a user's files (GET /files).
+    index('files_owner_uploaded_idx').on(table.ownerId, table.uploadedAt.desc(), table.id.desc()).where(sql`${table.fileStatus} = 'uploaded'`),
 ]);
 
 // HLS output for video files, written by the video-worker once transcoding finishes.
@@ -90,3 +94,18 @@ export const fileAiSummary = pgTable('file_ai_summary', {
     status: text('status', { enum: ['pending', 'done', 'failed'] }).notNull().default('pending'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const uploadUsage = pgTable('upload_usage', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    // Null once the file is deleted; the row still counts toward the weekly quota.
+    fileId: text('file_id').references(() => files.id, { onDelete: 'set null' }),
+    // Reserved as the full upload size at create, lowered to the bytes actually received if it never finishes.
+    bytesConsumed: bigint('bytes_consumed', { mode: 'number' }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    // Backs the weekly quota sum: one user's rows within the last 7 days.
+    index('upload_usage_user_created_idx').on(table.userId, table.createdAt),
+    // Backs the purge sweep, which drops rows older than 7 days.
+    index('upload_usage_created_idx').on(table.createdAt),
+]);

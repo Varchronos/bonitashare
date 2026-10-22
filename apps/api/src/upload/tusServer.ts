@@ -1,16 +1,17 @@
 import { EVENTS, Server } from '@tus/server';
 import { S3Store, type MetadataValue } from '@tus/s3-store';
 import { nanoid } from 'nanoid';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { files } from '@bonitashare/core/db';
-import { TIER_LIMITS, type Tier } from '@bonitashare/shared-types';
+import { files, uploadUsage } from '@bonitashare/core/db';
+import { TIER_LIMITS, quotaMessages, type Tier } from '@bonitashare/shared-types';
 import { BUCKET } from '@bonitashare/core/storage';
 import { PROCESS_UPLOAD_JOB, processUploadJobId } from '@bonitashare/core/queue';
 import { fileProcessingQueue } from '@/queue/client.js';
 import { Redis } from 'ioredis';
 import { RedisLocker } from './redisLocker.js';
 import { ExpiringRedisKvStore } from './redisKvStore.js';
+import { getUsage } from './usage.js';
 
 const endpoint = new URL(process.env.S3_ENDPOINT!);
 
@@ -23,6 +24,11 @@ function getUserId(req: TusRequest): string | null {
 
 function getTier(req: TusRequest): Tier {
     return (req.runtime?.node?.req as { tier?: Tier | null } | undefined)?.tier ?? 'anonymous';
+}
+
+// Read by onIncomingRequest before a DELETE: by POST_TERMINATE the store has already forgotten the upload.
+function getTerminatedOffset(req: TusRequest): number | null {
+    return (req.runtime?.node?.req as { terminatedOffset?: number } | undefined)?.terminatedOffset ?? null;
 }
 
 // Separate from the BullMQ connection: lock and metadata calls should fail fast, not retry forever.
@@ -101,22 +107,43 @@ export const tusServer = new Server({
             throw { status_code: 400, body: "Upload-Metadata must include 'filename'\n" };
         }
 
+        const userId = getUserId(req);
+        if (!userId) {
+            throw { status_code: 401, body: 'Session required\n' };
+        }
         const tier = getTier(req);
         if (upload.size > TIER_LIMITS[tier].maxFileBytes) {
             // 413 rather than 429: the client retries 429s, and retrying can't make the file smaller.
-            throw { status_code: 413, body: 'File is larger than your plan allows\n' };
+            throw { status_code: 413, body: `${quotaMessages.fileTooLarge(tier)}\n` };
         }
         const expiresAt = expiryFor(tier, upload.metadata?.[EXPIRES_IN_METADATA]);
+        const size = upload.size;
 
-        await db.insert(files).values({
-            id: toShareId(upload.id),
-            ownerId: getUserId(req),
-            storageKey: upload.id,
-            filename,
-            contentType: upload.metadata?.filetype ?? null,
-            sizeBytes: upload.size,
-            fileStatus: 'uploading',
-            expiresAt,
+        await db.transaction(async (tx) => {
+            // Serializes one user's creates, so parallel uploads can't each pass the check against the same usage.
+            await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${userId}))`);
+
+            // The full size counts from the start; a terminated upload is lowered to what it reached.
+            const { weekly, storage } = await getUsage(userId, tier, tx);
+            if (weekly.used + size > weekly.limit) {
+                throw { status_code: 403, body: `${quotaMessages.weeklyFull(weekly.limit - weekly.used, weekly.limit)}\n` };
+            }
+            if (storage.limit !== null && storage.used + size > storage.limit) {
+                throw { status_code: 403, body: `${quotaMessages.storageFull(storage.limit - storage.used, storage.limit)}\n` };
+            }
+
+            const fileId = toShareId(upload.id);
+            await tx.insert(files).values({
+                id: fileId,
+                ownerId: userId,
+                storageKey: upload.id,
+                filename,
+                contentType: upload.metadata?.filetype ?? null,
+                sizeBytes: size,
+                fileStatus: 'uploading',
+                expiresAt,
+            });
+            await tx.insert(uploadUsage).values({ userId, fileId, bytesConsumed: size });
         });
 
         return {};
@@ -148,9 +175,28 @@ export const tusServer = new Server({
         if (!userId || file.ownerId !== userId) {
             throw { status_code: 403, body: 'You are not the owner of this upload\n' };
         }
+
+        if (req.method === 'DELETE') {
+            // Taken before tus's lock, so a PATCH still in flight can land a few more bytes than this.
+            const { offset } = await datastore.getUpload(id);
+            Object.assign(req.runtime?.node?.req ?? {}, { terminatedOffset: offset });
+        }
     },
 });
 
-tusServer.on(EVENTS.POST_TERMINATE, async (_req, _res, id) => {
-    await db.delete(files).where(eq(files.id, toShareId(id)))
+tusServer.on(EVENTS.POST_TERMINATE, async (req, _res, id) => {
+    const fileId = toShareId(id);
+    const offset = getTerminatedOffset(req);
+    // An event listener: nothing awaits it, so a throw here would be an unhandled rejection.
+    try {
+        await db.transaction(async (tx) => {
+            // Only charge for what was actually uploaded. The row outlives the file and keeps counting for the week.
+            if (offset !== null) {
+                await tx.update(uploadUsage).set({ bytesConsumed: offset }).where(eq(uploadUsage.fileId, fileId));
+            }
+            await tx.delete(files).where(eq(files.id, fileId));
+        });
+    } catch (err) {
+        console.error(`cleanup after terminating upload ${fileId} failed:`, err);
+    }
 })

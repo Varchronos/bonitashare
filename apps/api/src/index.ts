@@ -19,7 +19,7 @@ const app = Fastify({ logger: true });
 // Public and session-free, and outside /api/v1 so container healthchecks don't track API versions.
 // Sessions are only ever issued by GET /api/v1/session; other routes opt into
 // requireSession/optionalSession themselves.
-app.get("/health", async (): Promise<ApiResponse<{ status: "ok" }>> => {
+app.get("/health", { logLevel: 'error' }, async (): Promise<ApiResponse<{ status: "ok" }>> => {
   return { data: { status: "ok" }, error: null };
 });
 

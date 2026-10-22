@@ -2,10 +2,12 @@
 import Layout from "../layouts/Layout.astro";
 import FileUpload from "../components/upload/FileUpload";
 import { getSession } from "../lib/session";
+import { getUsage } from "../lib/usage";
 
 // Resolve (or mint) the session up front so the upload widget already has
 // a session cookie by the time it posts.
-await getSession(Astro);
+const { cookie } = await getSession(Astro);
+const usage = await getUsage(cookie);
 
 const features = [
 	{
@@ -37,7 +39,7 @@ const features = [
 				</div>
 			</div>
 			<div class="hero-upload">
-				<FileUpload client:load />
+				<FileUpload client:load usage={usage} />
 			</div>
 		</section>
 

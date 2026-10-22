@@ -2,15 +2,18 @@
 import Layout from '../layouts/Layout.astro';
 import FileUpload from '../components/upload/FileUpload';
 import { getSession } from '../lib/session';
+import { getUsage } from '../lib/usage';
+import { getFiles } from '../lib/files';
 
-await getSession(Astro);
+const { cookie } = await getSession(Astro);
+const [usage, files] = await Promise.all([getUsage(cookie), getFiles(cookie)]);
 ---
 
-<Layout title="Upload">
+<Layout title="Upload" description="Upload files and get a share link for each as soon as it finishes.">
 	<section class="container page">
 		<h1>Upload files</h1>
 		<p>Drop in anything you want to share. You'll get a link once it's uploaded.</p>
-		<FileUpload client:load />
+		<FileUpload client:load usage={usage} files={files} />
 	</section>
 </Layout>
 

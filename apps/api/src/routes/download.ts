@@ -45,6 +45,19 @@ async function findServableFile(req: FastifyRequest<{ Params: { id: string } }>,
     return { file, failure: null } as const;
 }
 
+// Storage only knows the object key (uploads/<id>), so without this a saved file is named after the
+// id. Inline keeps previews and "Open file" working in the browser; filename* carries the real name
+// (any script), filename an ASCII fallback for clients that don't read filename* (RFC 6266).
+function contentDisposition(filename: string) {
+    const fallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
+    const encoded = encodeURIComponent(filename).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+    return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
+// Uploads are stored as binary/octet-stream, which link-preview crawlers won't take as an image.
+// Only raster formats: they can't carry script, unlike SVG or HTML served from the storage domain.
+const INLINE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+
 const downloadRoutes: FastifyPluginAsync = async (fastify) => {
     // Public, but owners can also fetch their own private files.
     fastify.addHook('onRequest', fastify.optionalSession);
@@ -53,7 +66,10 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
         const { file, failure } = await findServableFile(req, reply);
         if (!file) return failure;
 
-        const url = await publicStorage.presignedGetObject(BUCKET, file.storageKey, URL_EXPIRY_SECONDS);
+        const url = await publicStorage.presignedGetObject(BUCKET, file.storageKey, URL_EXPIRY_SECONDS, {
+            'response-content-disposition': contentDisposition(file.filename),
+            ...(file.contentType && INLINE_IMAGE_TYPES.has(file.contentType) ? { 'response-content-type': file.contentType } : {}),
+        });
 
         return {
             data: {
