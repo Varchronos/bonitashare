@@ -24,6 +24,23 @@ const hlsUrl = video?.hlsUrl ?? null;
 const OG_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const ogImage = file?.thumbnailUrl ?? (isImage && file && file.sizeBytes <= OG_IMAGE_MAX_BYTES ? file.url : null);
 
+// Small videos play inline in link previews. Formats unfurlers can play, and a size they'll fetch
+// without stalling the preview. Points at /f/<id>/raw rather than the presigned URL: unfurlers keep
+// the embed for days and fetch the video only when someone presses play, long after a presigned URL
+// has expired; /raw signs a fresh one each time.
+const OG_VIDEO_MAX_BYTES = 5 * 1024 * 1024;
+const OG_VIDEO_TYPES = new Set(["video/mp4", "video/webm"]);
+const ogVideo =
+	file?.contentType && OG_VIDEO_TYPES.has(file.contentType) && file.sizeBytes <= OG_VIDEO_MAX_BYTES
+		? {
+				url: new URL(`/f/${encodeURIComponent(id!)}/raw`, Astro.url).toString(),
+				type: file.contentType,
+				// Known once the video-worker has probed the file.
+				width: video?.width,
+				height: video?.height,
+			}
+		: null;
+
 // Private and missing files get the same text as each other, so a preview doesn't reveal which it is.
 const kind = isImage ? "Image" : isVideo ? "Video" : isAudio ? "Audio" : "File";
 const description = file
@@ -33,7 +50,7 @@ const description = file
 		: "This file doesn't exist or isn't available.";
 ---
 
-<Layout title={file?.filename ?? "File not found"} description={description} ogImage={ogImage}>
+<Layout title={file?.filename ?? "File not found"} description={description} ogImage={ogImage} ogVideo={ogVideo}>
 	<section class="container page">
 		{
 			file ? (

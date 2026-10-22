@@ -8,11 +8,13 @@ interface Props {
 	description?: string;
 	// Absolute URL; left out entirely when absent so unfurlers don't get an empty image.
 	ogImage?: string | null;
+	// A small video unfurlers can play inline (Discord, Telegram, Slack…). Absolute URL.
+	ogVideo?: { url: string; type: string; width?: number | null; height?: number | null } | null;
 }
 
 const DEFAULT_DESCRIPTION = 'Share files fast: drop them in and get a link. No install needed.';
 
-const { title, description = DEFAULT_DESCRIPTION, ogImage } = Astro.props;
+const { title, description = DEFAULT_DESCRIPTION, ogImage, ogVideo } = Astro.props;
 const fullTitle = title ? `${title} · bonitashare` : 'bonitashare';
 ---
 
@@ -31,6 +33,18 @@ const fullTitle = title ? `${title} · bonitashare` : 'bonitashare';
 		<meta property="og:description" content={description} />
 		{ogImage && <meta property="og:image" content={ogImage} />}
 		{ogImage && <meta name="twitter:card" content="summary_large_image" />}
+		{
+			ogVideo && (
+				<>
+					<meta property="og:type" content="video.other" />
+					<meta property="og:video" content={ogVideo.url} />
+					{ogVideo.url.startsWith('https:') && <meta property="og:video:secure_url" content={ogVideo.url} />}
+					<meta property="og:video:type" content={ogVideo.type} />
+					{ogVideo.width && <meta property="og:video:width" content={String(ogVideo.width)} />}
+					{ogVideo.height && <meta property="og:video:height" content={String(ogVideo.height)} />}
+				</>
+			)
+		}
 	</head>
 	<body>
 		<Navbar />

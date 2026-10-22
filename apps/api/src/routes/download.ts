@@ -54,9 +54,10 @@ function contentDisposition(filename: string) {
     return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
-// Uploads are stored as binary/octet-stream, which link-preview crawlers won't take as an image.
-// Only raster formats: they can't carry script, unlike SVG or HTML served from the storage domain.
-const INLINE_IMAGE_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif']);
+// Uploads are stored as binary/octet-stream, which link-preview crawlers won't take as an image or
+// play as a video (og:video). Only raster images and plain video containers: they can't carry
+// script, unlike SVG or HTML served from the storage domain.
+const INLINE_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'video/mp4', 'video/webm']);
 
 const downloadRoutes: FastifyPluginAsync = async (fastify) => {
     // Public, but owners can also fetch their own private files.
@@ -68,7 +69,7 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
 
         const url = await publicStorage.presignedGetObject(BUCKET, file.storageKey, URL_EXPIRY_SECONDS, {
             'response-content-disposition': contentDisposition(file.filename),
-            ...(file.contentType && INLINE_IMAGE_TYPES.has(file.contentType) ? { 'response-content-type': file.contentType } : {}),
+            ...(file.contentType && INLINE_MEDIA_TYPES.has(file.contentType) ? { 'response-content-type': file.contentType } : {}),
         });
 
         return {
