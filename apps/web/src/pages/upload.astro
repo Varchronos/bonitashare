@@ -8,7 +8,7 @@ const { cookie } = await getSession(Astro);
 const usage = await getUsage(cookie);
 ---
 
-<Layout title="Upload">
+<Layout title="Upload" description="Upload files and get a share link for each as soon as it finishes.">
 	<section class="container page">
 		<h1>Upload files</h1>
 		<p>Drop in anything you want to share. You'll get a link once it's uploaded.</p>

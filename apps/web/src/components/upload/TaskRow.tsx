@@ -6,7 +6,7 @@ import { FileIcon, TrashIcon, CheckIcon, PauseIcon, PlayIcon, RetryIcon } from '
 
 function linkFor(task: UploadTask) {
 	const id = shareIdFor(task);
-	return id ? `${window.location.origin}/${id}` : null;
+	return id ? `${window.location.origin}/f/${id}` : null;
 }
 
 async function copyLink(url: string) {
