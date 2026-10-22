@@ -321,3 +321,35 @@
 	color: var(--muted);
 	font-size: 0.8rem;
 }
+
+.user-files {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	margin-top: 32px;
+}
+
+.user-files h2 {
+	margin: 0;
+	font-size: 1.1rem;
+}
+
+/* Same rows as .task-list, but in the server's order (newest first) rather than reversed. */
+.file-list {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.file-list li {
+	display: flex;
+	flex-direction: row;
+	gap: 16px;
+	padding: 12px;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	background: var(--surface);
+}

@@ -9,7 +9,7 @@ function linkFor(task: UploadTask) {
 	return id ? `${window.location.origin}/f/${id}` : null;
 }
 
-async function copyLink(url: string) {
+export async function copyLink(url: string) {
 	try {
 		await navigator.clipboard.writeText(url);
 	} catch {

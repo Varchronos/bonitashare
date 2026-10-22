@@ -1,6 +1,6 @@
 import * as tus from 'tus-js-client'
 import type { ApiResponse } from '@bonitashare/shared-types'
-import { useUploadStore } from '../store/file-store'
+import { useUploadStore, type UploadTask } from '../store/file-store'
 import { refreshUsage } from '../store/usage-store'
 
 export class UploadQueue {
@@ -180,6 +180,20 @@ export function resumeUpload(id: string) {
 // from the resource URL rather than tracking it separately.
 export function shareIdFor(task: { tusUploadUrl: string }) {
     return task.tusUploadUrl.split('/').filter(Boolean).pop() ?? null
+}
+
+// For a task restored after a reload: the tab may have closed after the last byte landed but before
+// the store saved 'done'. tus answers HEAD with how much it has; offset == length means finished.
+// Any failure (gone, not ours, offline) counts as not finished — the task then stays as interrupted.
+export async function isUploadFinished(task: UploadTask) {
+    if (!task.tusUploadUrl) return false
+    try {
+        const res = await fetch(task.tusUploadUrl, { method: 'HEAD', headers: { 'Tus-Resumable': '1.0.0' } })
+        const offset = res.headers.get('Upload-Offset')
+        return res.ok && offset !== null && offset === res.headers.get('Upload-Length')
+    } catch {
+        return false
+    }
 }
 
 // The worker makes thumbnails shortly after an upload finishes, so check a few

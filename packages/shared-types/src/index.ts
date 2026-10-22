@@ -44,5 +44,24 @@ export type FileItem = {
   expiresAt: Date | null
 }
 
+// One of the signed-in user's finished uploads, as GET /files lists them.
+export type UserFile = {
+  id: string
+  filename: string
+  contentType: string | null
+  sizeBytes: number
+  isPublic: boolean
+  // Null until the worker has made one, or for files that don't get thumbnails.
+  thumbnailUrl: string | null
+  uploadedAt: string
+  expiresAt: string | null
+}
+
+export type FilePage = {
+  files: UserFile[]
+  // Pass back as ?cursor= for the next page; null on the last one.
+  nextCursor: string | null
+}
+
 export * from './tiers.js'
 export * from './utils/byte-conversion.js'

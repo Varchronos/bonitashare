@@ -44,6 +44,8 @@ export const files = pgTable('files', {
     index('files_unprocessed_idx').on(table.uploadedAt).where(sql`${table.fileStatus} = 'uploaded' AND ${table.processingStatus} = 'pending'`),
     // Backs the storage quota sum over a user's files.
     index('files_owner_id_idx').on(table.ownerId).where(sql`${table.ownerId} IS NOT NULL`),
+    // Backs the newest-first, keyset-paginated list of a user's files (GET /files).
+    index('files_owner_uploaded_idx').on(table.ownerId, table.uploadedAt.desc(), table.id.desc()).where(sql`${table.fileStatus} = 'uploaded'`),
 ]);
 
 // HLS output for video files, written by the video-worker once transcoding finishes.
