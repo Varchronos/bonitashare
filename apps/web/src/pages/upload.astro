@@ -2,15 +2,17 @@
 import Layout from '../layouts/Layout.astro';
 import FileUpload from '../components/upload/FileUpload';
 import { getSession } from '../lib/session';
+import { getUsage } from '../lib/usage';
 
-await getSession(Astro);
+const { cookie } = await getSession(Astro);
+const usage = await getUsage(cookie);
 ---
 
 <Layout title="Upload">
 	<section class="container page">
 		<h1>Upload files</h1>
 		<p>Drop in anything you want to share. You'll get a link once it's uploaded.</p>
-		<FileUpload client:load />
+		<FileUpload client:load usage={usage} />
 	</section>
 </Layout>
 

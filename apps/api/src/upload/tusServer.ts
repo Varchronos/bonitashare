@@ -4,7 +4,7 @@ import { nanoid } from 'nanoid';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { files, uploadUsage } from '@bonitashare/core/db';
-import { TIER_LIMITS, type Tier } from '@bonitashare/shared-types';
+import { TIER_LIMITS, quotaMessages, type Tier } from '@bonitashare/shared-types';
 import { BUCKET } from '@bonitashare/core/storage';
 import { PROCESS_UPLOAD_JOB, processUploadJobId } from '@bonitashare/core/queue';
 import { fileProcessingQueue } from '@/queue/client.js';
@@ -114,7 +114,7 @@ export const tusServer = new Server({
         const tier = getTier(req);
         if (upload.size > TIER_LIMITS[tier].maxFileBytes) {
             // 413 rather than 429: the client retries 429s, and retrying can't make the file smaller.
-            throw { status_code: 413, body: 'File is larger than your plan allows\n' };
+            throw { status_code: 413, body: `${quotaMessages.fileTooLarge(tier)}\n` };
         }
         const expiresAt = expiryFor(tier, upload.metadata?.[EXPIRES_IN_METADATA]);
         const size = upload.size;
@@ -126,10 +126,10 @@ export const tusServer = new Server({
             // The full size counts from the start; a terminated upload is lowered to what it reached.
             const { weekly, storage } = await getUsage(userId, tier, tx);
             if (weekly.used + size > weekly.limit) {
-                throw { status_code: 403, body: 'Weekly upload limit reached\n' };
+                throw { status_code: 403, body: `${quotaMessages.weeklyFull(weekly.limit - weekly.used, weekly.limit)}\n` };
             }
             if (storage.limit !== null && storage.used + size > storage.limit) {
-                throw { status_code: 403, body: 'Storage limit reached\n' };
+                throw { status_code: 403, body: `${quotaMessages.storageFull(storage.limit - storage.used, storage.limit)}\n` };
             }
 
             const fileId = toShareId(upload.id);

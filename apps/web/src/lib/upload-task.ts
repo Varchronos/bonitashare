@@ -1,6 +1,7 @@
 import * as tus from 'tus-js-client'
 import type { ApiResponse } from '@bonitashare/shared-types'
 import { useUploadStore } from '../store/file-store'
+import { refreshUsage } from '../store/usage-store'
 
 export class UploadQueue {
     public queue: tus.Upload[]
@@ -98,7 +99,9 @@ function shouldRetryUpload(err: tus.DetailedError) {
     return status < 400 || status >= 500 || status === 409 || status === 423 || status === 429
 }
 
-export function enqueueFile(file: File): string {
+// With `blockedReason` (from the quota check), the task is shown as failed with that reason and not
+// started. Try again still sends it, so the server makes the final call.
+export function enqueueFile(file: File, blockedReason: string | null = null): string {
     const id = crypto.randomUUID()
     const { addFiles, updateFile } = useUploadStore.getState()
 
@@ -117,12 +120,17 @@ export function enqueueFile(file: File): string {
         // linkFor() in TaskRow.
         onUploadUrlAvailable: () => updateFile(id, { tusUploadUrl: upload.url ?? '' }),
         onProgress: (bytesUploaded) => updateFile(id, { status: 'uploading', bytesUploaded }),
-        onSuccess: () => updateFile(id, { status: 'done', bytesUploaded: file.size }),
-        // The server's own explanation (file too large for the plan, …) when it sent one; tus's
-        // message is a dump of the request.
+        onSuccess: () => {
+            updateFile(id, { status: 'done', bytesUploaded: file.size })
+            refreshUsage()
+        },
+        // The server's own explanation (file too large for the plan, weekly or storage limit reached, …)
+        // when it sent one; tus's message is a dump of the request.
         onError: (err) => {
             const reason = 'originalResponse' in err ? err.originalResponse?.getBody()?.trim() : null
             updateFile(id, { status: 'error', errorMessage: reason || err.message })
+            // A 403/413 means our numbers were stale. Any other failure may still hold a reservation.
+            refreshUsage()
         },
     })
 
@@ -141,11 +149,11 @@ export function enqueueFile(file: File): string {
             expiresAt: null,
             tusUploadUrl: '',
             bytesUploaded: 0,
-            status: 'queued',
-            errorMessage: null,
+            status: blockedReason ? 'error' : 'queued',
+            errorMessage: blockedReason,
         },
     ])
-    queue.add(upload)
+    if (!blockedReason) queue.add(upload)
 
     return id
 }
@@ -211,7 +219,8 @@ export function cancelUpload(id: string) {
     const upload = liveUploads.get(id)
     if (upload) {
         queue.abort(upload)
-        upload.abort(true).catch(() => {})
+        // Terminating lowers the server's reservation to what was sent, so refetch once that's done.
+        upload.abort(true).catch(() => {}).finally(refreshUsage)
         liveUploads.delete(id)
     }
     useUploadStore.getState().removeFile(id)

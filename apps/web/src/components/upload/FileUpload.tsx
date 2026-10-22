@@ -1,11 +1,19 @@
 import { useEffect, useRef } from 'react';
+import type { Usage } from '@bonitashare/shared-types';
 import { useUploadStore } from '../../store/file-store';
 import { enqueueFile } from '../../lib/upload-task';
+import { quotaProblem, useUsageStore } from '../../store/usage-store';
 import TaskList from './TaskList';
+import UsageMeter from './UsageMeter';
 import './FileUpload.css';
 
-export default function FileUpload() {
+export default function FileUpload({ usage }: { usage: Usage | null }) {
 	const inputRef = useRef<HTMLInputElement>(null);
+
+	// Into the store on mount, not during render: on the server the store is shared by every request.
+	useEffect(() => {
+		if (usage) useUsageStore.getState().setUsage(usage);
+	}, [usage]);
 
 	useEffect(() => {
 		// The store loads asynchronously from IndexedDB (skipHydration), and
@@ -24,11 +32,14 @@ export default function FileUpload() {
 
 	function enqueue(list: FileList | null) {
 		if (!list?.length) return;
-		for (const file of Array.from(list)) enqueueFile(file);
+		// One at a time: each queued file reserves its size, so the next one is checked against what's left.
+		for (const file of Array.from(list)) enqueueFile(file, quotaProblem(file.size));
 	}
 
 	return (
 		<div className="uploader">
+			<UsageMeter initial={usage} />
+
 			<div
 				className="dropzone"
 				role="button"

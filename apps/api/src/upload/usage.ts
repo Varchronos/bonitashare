@@ -1,6 +1,6 @@
 import { db } from "@/db/client.js";
 import { files, uploadUsage, type Db } from "@bonitashare/core/db";
-import { TIER_LIMITS, type Tier } from "@bonitashare/shared-types";
+import { TIER_LIMITS, type Tier, type Usage } from "@bonitashare/shared-types";
 import { and, eq, gt, isNull, min, ne, or, sql } from "drizzle-orm";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -8,9 +8,7 @@ const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 // db itself or an open transaction, so onUploadCreate can check and insert under one lock.
 type Executor = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-export type Usage = Awaited<ReturnType<typeof getUsage>>;
-
-export async function getUsage(userId: string, tier: Tier, executor: Executor = db) {
+export async function getUsage(userId: string, tier: Tier, executor: Executor = db): Promise<Usage> {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - WEEK_MS);
     const limits = TIER_LIMITS[tier];
@@ -41,7 +39,7 @@ export async function getUsage(userId: string, tier: Tier, executor: Executor = 
             used: weekly.used,
             limit: limits.weeklyUploadBytes,
             // When the oldest upload in the window ages out and frees some quota; null if nothing counts.
-            nextFreesAt: weekly.oldest ? new Date(weekly.oldest.getTime() + WEEK_MS) : null,
+            nextFreesAt: weekly.oldest ? new Date(weekly.oldest.getTime() + WEEK_MS).toISOString() : null,
         },
         storage: {
             used: storage.used,
