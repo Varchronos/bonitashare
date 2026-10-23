@@ -52,6 +52,9 @@ const WORKDIR_PREFIX = 'transcode-';
 const MAX_SOURCE_BYTES = 2.5 * 1024 ** 3;
 // One slot per instance, so this bounds how long a single upload can hold it.
 const MAX_DURATION_MS = 2 * 60 * 60 * 1000;
+// Small enough that the original downloads about as fast as the first few HLS segments would, so an
+// encode only costs the slot; these get a poster and probe data, and the share page plays the original.
+const MIN_HLS_SOURCE_BYTES = 5 * 1024 * 1024;
 
 // Sized by the shorter side, so portrait video gets the same ladder as landscape. Never upscaled.
 const RENDITIONS = [
@@ -334,6 +337,24 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
                 await db.update(files).set({ thumbKey }).where(eq(files.id, fileId));
                 log(`poster saved as ${THUMB_BUCKET}/${thumbKey}`);
             }
+        }
+
+        if (video.sizeBytes < MIN_HLS_SOURCE_BYTES) {
+            // 'done' without a masterKey: the API hands out no hlsUrl, so the page plays the original.
+            await db
+                .update(fileVideos)
+                .set({
+                    status: 'done',
+                    error: null,
+                    durationMs: probed.durationMs,
+                    width: probed.width,
+                    height: probed.height,
+                    hasAudio: probed.hasAudio,
+                    completedAt: new Date(),
+                })
+                .where(eq(fileVideos.fileId, fileId));
+            log(`under ${MIN_HLS_SOURCE_BYTES} bytes, skipping HLS; done in ${formatMs(Date.now() - startedAt)}`);
+            return;
         }
 
         const renditions = pickRenditions(probed);
