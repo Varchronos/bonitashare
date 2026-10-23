@@ -2,14 +2,15 @@ import 'dotenv/config';
 import { pipeline } from 'node:stream/promises';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import sharp from 'sharp';
-import { and, eq, lt } from 'drizzle-orm';
-import { createDb, fileVideos, files } from '@bonitashare/core/db';
+import { and, eq, lt, lte, sql } from 'drizzle-orm';
+import { createDb, fileDeletions, fileVideos, files } from '@bonitashare/core/db';
 import { nanoid } from 'nanoid';
-import { BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
+import { BUCKET, HLS_BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
 import { onShutdown } from '@bonitashare/core/shutdown';
 import {
     FILE_PROCESSING_QUEUE,
     PROCESS_UPLOAD_JOB,
+    PURGE_DELETED_FILES_JOB,
     RECONCILE_UPLOADS_JOB,
     TRANSCODE_HLS_JOB,
     createFileProcessingQueue,
@@ -40,6 +41,12 @@ const RECONCILE_EVERY_MS = 5 * 60 * 1000;
 // Re-adding one that is merely slow is harmless: the stable jobId makes it a no-op.
 const RECONCILE_AFTER_MS = 10 * 60 * 1000;
 const RECONCILE_BATCH_SIZE = 500;
+
+// Timing isn't promised to the user beyond "after the restore window", so this only bounds how long
+// a deleted file's objects outlive it.
+const PURGE_EVERY_MS = 15 * 60 * 1000;
+// Each file is a few storage calls (one per thousand HLS segments), so a batch stays well inside a run.
+const PURGE_BATCH_SIZE = 50;
 
 // libvips caches decoded images for repeated operations; every job here reads a different file,
 // so the cache only holds memory between jobs.
@@ -167,6 +174,76 @@ async function reconcileUploads() {
     console.log(`reconcile: ${stale.length} stale, ${toEnqueue.length} re-enqueued, ${repaired} repaired from job state`);
 }
 
+async function removeObjects(bucket: string, keys: string[]) {
+    if (keys.length === 0) return;
+    // Per-key failures come back in the response rather than as a throw.
+    const failed = (await storage.removeObjects(bucket, keys)).filter((r) => r?.Error);
+    if (failed.length > 0) {
+        throw new Error(`could not remove ${failed.length} objects from ${bucket}: ${failed[0]!.Error!.Code} ${failed[0]!.Error!.Message}`);
+    }
+}
+
+async function listKeys(bucket: string, prefix: string): Promise<string[]> {
+    const keys: string[] = [];
+    for await (const item of storage.listObjectsV2(bucket, prefix, true)) {
+        if (item.name) keys.push(item.name);
+    }
+    return keys;
+}
+
+// Hard-deletes one soft-deleted file: its original, thumbnail and HLS output, then its rows. Inside one
+// transaction that holds the file_deletions row, so a restore that got in first leaves nothing to find,
+// and one that comes after waits and then finds the window closed. A failed storage call rolls back and
+// the next sweep tries again; objects already removed are no-ops then.
+async function purgeFile(fileId: string) {
+    await db.transaction(async (tx) => {
+        const [due] = await tx
+            .select({
+                storageKey: files.storageKey,
+                thumbKey: files.thumbKey,
+                hlsPrefix: fileVideos.hlsPrefix,
+            })
+            .from(fileDeletions)
+            .innerJoin(files, eq(files.id, fileDeletions.fileId))
+            .leftJoin(fileVideos, eq(fileVideos.fileId, fileDeletions.fileId))
+            .where(and(eq(fileDeletions.fileId, fileId), lte(fileDeletions.purgeAfter, sql`now()`)))
+            .for('update', { of: fileDeletions });
+        if (!due) return;
+
+        // tus's S3Store keeps a `<key>.info` metadata object next to every upload, finished ones included.
+        await removeObjects(BUCKET, [due.storageKey, `${due.storageKey}.info`]);
+        if (due.thumbKey) await removeObjects(THUMB_BUCKET, [due.thumbKey]);
+        // The trailing slash keeps one prefix from matching another that starts with it.
+        if (due.hlsPrefix) await removeObjects(HLS_BUCKET, await listKeys(HLS_BUCKET, `${due.hlsPrefix}/`));
+
+        // Cascades to file_deletions, file_videos and album links; upload_usage keeps its row for the weekly quota.
+        await tx.delete(files).where(eq(files.id, fileId));
+    });
+}
+
+// Objects a worker writes after its file was purged (a thumbnail finishing at that moment) aren't
+// tracked anywhere; they're left to a future bucket lifecycle rule.
+async function purgeDeletedFiles() {
+    const due = await db
+        .select({ fileId: fileDeletions.fileId })
+        .from(fileDeletions)
+        .where(lte(fileDeletions.purgeAfter, sql`now()`))
+        .limit(PURGE_BATCH_SIZE);
+    if (due.length === 0) return;
+
+    let purged = 0;
+    for (const { fileId } of due) {
+        try {
+            await purgeFile(fileId);
+            purged++;
+        } catch (err) {
+            // One file's storage trouble shouldn't hold up the rest; it stays due for the next sweep.
+            console.error(`purge: file ${fileId} failed, retrying next sweep:`, err);
+        }
+    }
+    console.log(`purge: ${purged} of ${due.length} deleted files purged`);
+}
+
 // Only moves a row out of 'pending', so a sweep racing a job that just finished can't overwrite its result.
 async function markProcessed(
     fileId: string,
@@ -182,6 +259,7 @@ const worker = new Worker<FileProcessingJobData, void, FileProcessingJobName>(
     FILE_PROCESSING_QUEUE,
     async (job) => {
         if (job.name === RECONCILE_UPLOADS_JOB) return reconcileUploads();
+        if (job.name === PURGE_DELETED_FILES_JOB) return purgeDeletedFiles();
         return processUpload(job as Job<ProcessUploadJob>);
     },
     // Peak memory scales with this raise it deliberately, not by default.
@@ -224,6 +302,12 @@ await fileProcessingQueue.upsertJobScheduler(
     { every: RECONCILE_EVERY_MS },
     // Nothing reads a finished sweep back, so completions go immediately; a few failures stay for debugging.
     { name: RECONCILE_UPLOADS_JOB, data: {}, opts: { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } } },
+);
+
+await fileProcessingQueue.upsertJobScheduler(
+    PURGE_DELETED_FILES_JOB,
+    { every: PURGE_EVERY_MS },
+    { name: PURGE_DELETED_FILES_JOB, data: {}, opts: { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } } },
 );
 
 console.log('Worker listening on queue:', FILE_PROCESSING_QUEUE);

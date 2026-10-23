@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { createDb, fileVideos, files } from '@bonitashare/core/db';
+import { createDb, fileDeletions, fileVideos, files } from '@bonitashare/core/db';
 import { BUCKET, HLS_BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
 import {
     VIDEO_PROCESSING_QUEUE,
@@ -55,6 +55,9 @@ const MAX_DURATION_MS = 2 * 60 * 60 * 1000;
 // Small enough that the original downloads about as fast as the first few HLS segments would, so an
 // encode only costs the slot; these get a poster and probe data, and the share page plays the original.
 const MIN_HLS_SOURCE_BYTES = 5 * 1024 * 1024;
+// Past this an encode runs long enough that a delete during it is worth noticing: the file's status is
+// rechecked at every 10% and the encode stopped if it's gone. Smaller ones only check before uploading.
+const DELETION_CHECK_MIN_BYTES = 200 * 1024 * 1024;
 
 // Sized by the shorter side, so portrait video gets the same ladder as landscape. Never upscaled.
 const RENDITIONS = [
@@ -291,6 +294,16 @@ async function uploadHls(outDir: string, hlsPrefix: string): Promise<number> {
 
 const formatMs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
+// Soft-deleted, or already purged. Either way its output would only be thrown away.
+async function isDeleted(fileId: string): Promise<boolean> {
+    const [row] = await db
+        .select({ id: files.id, deletedAt: fileDeletions.deletedAt })
+        .from(files)
+        .leftJoin(fileDeletions, eq(fileDeletions.fileId, files.id))
+        .where(eq(files.id, fileId));
+    return !row || row.deletedAt !== null;
+}
+
 async function transcodeHls(job: Job<TranscodeHlsJob>) {
     const { fileId } = job.data;
     const log = (msg: string) => console.log(`[transcode ${fileId}] ${msg}`);
@@ -302,14 +315,21 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
             storageKey: files.storageKey,
             sizeBytes: files.sizeBytes,
             thumbKey: files.thumbKey,
+            deletedAt: fileDeletions.deletedAt,
         })
         .from(fileVideos)
         .innerJoin(files, eq(files.id, fileVideos.fileId))
+        .leftJoin(fileDeletions, eq(fileDeletions.fileId, fileVideos.fileId))
         .where(eq(fileVideos.fileId, fileId));
-    // Deleted or expired since enqueue (the cascade took the video row too), or a duplicate run of a
+    // Purged or expired since enqueue (the cascade took the video row too), or a duplicate run of a
     // job that already finished: either way there's nothing to do.
     if (!video || video.status === 'done') {
         log(video ? 'already done, skipping' : 'file gone, skipping');
+        return;
+    }
+    // Soft-deleted: the row stays 'pending', which is what tells a restore to queue this again.
+    if (video.deletedAt) {
+        log('deleted, skipping until restored');
         return;
     }
     log(`started (attempt ${job.attemptsMade + 1}), source ${(video.sizeBytes / 1024 ** 2).toFixed(1)} MiB`);
@@ -368,17 +388,44 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
         await mkdir(path.join(workdir, 'hls'));
         const encodeStartedAt = Date.now();
         let lastLoggedPercent = 0;
-        await runFfmpeg(hlsArgs(probed, renditions), workdir, (outTimeMs) => {
-            if (!probed.durationMs) return;
-            const percent = Math.min(100, Math.floor((outTimeMs / probed.durationMs) * 100));
-            // Every 10%, so docker logs shows it moving without a line per second.
-            if (percent >= lastLoggedPercent + 10) {
-                lastLoggedPercent = percent - (percent % 10);
-                log(`encoding ${lastLoggedPercent}% (${formatMs(Date.now() - encodeStartedAt)} elapsed)`);
-                job.updateProgress(lastLoggedPercent).catch(() => {});
+        const checkDeletion = video.sizeBytes > DELETION_CHECK_MIN_BYTES;
+        let deletedDuringEncode = false;
+        try {
+            await runFfmpeg(hlsArgs(probed, renditions), workdir, (outTimeMs) => {
+                if (!probed.durationMs) return;
+                const percent = Math.min(100, Math.floor((outTimeMs / probed.durationMs) * 100));
+                // Every 10%, so docker logs shows it moving without a line per second.
+                if (percent >= lastLoggedPercent + 10) {
+                    lastLoggedPercent = percent - (percent % 10);
+                    log(`encoding ${lastLoggedPercent}% (${formatMs(Date.now() - encodeStartedAt)} elapsed)`);
+                    job.updateProgress(lastLoggedPercent).catch(() => {});
+                    if (checkDeletion) {
+                        isDeleted(fileId)
+                            .then((deleted) => {
+                                if (!deleted) return;
+                                deletedDuringEncode = true;
+                                activeFfmpeg?.kill('SIGKILL');
+                            })
+                            // A failed check just means encoding on until the next one.
+                            .catch((err) => log(`deletion check failed: ${(err as Error).message}`));
+                    }
+                }
+            });
+        } catch (err) {
+            // Killed on purpose, not a failure: stop quietly and leave the row 'pending' for a restore.
+            if (deletedDuringEncode) {
+                log(`deleted during encode, stopped at ${lastLoggedPercent}%`);
+                return;
             }
-        });
+            throw err;
+        }
         log(`encoded in ${formatMs(Date.now() - encodeStartedAt)}`);
+
+        // Once more before the upload, for every size: one query against what can be thousands of PUTs.
+        if (await isDeleted(fileId)) {
+            log('deleted during encode, not uploading');
+            return;
+        }
 
         const uploaded = await uploadHls(path.join(workdir, 'hls'), video.hlsPrefix);
         log(`uploaded ${uploaded} files to ${HLS_BUCKET}/${video.hlsPrefix}`);

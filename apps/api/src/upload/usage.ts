@@ -1,5 +1,5 @@
 import { db } from "@/db/client.js";
-import { files, uploadUsage, type Db } from "@bonitashare/core/db";
+import { files, notDeleted, uploadUsage, type Db } from "@bonitashare/core/db";
 import { TIER_LIMITS, type Tier, type Usage } from "@bonitashare/shared-types";
 import { and, eq, gt, isNull, min, ne, or, sql } from "drizzle-orm";
 
@@ -22,7 +22,8 @@ export async function getUsage(userId: string, tier: Tier, executor: Executor = 
             })
             .from(uploadUsage)
             .where(and(eq(uploadUsage.userId, userId), gt(uploadUsage.createdAt, weekAgo))),
-        // Files that still exist, unfinished uploads included at their full size.
+        // Files that still exist, unfinished uploads included at their full size. Soft-deleted ones are
+        // already freed: restoring one has to fit again (see POST /files/:id/restore).
         executor
             .select({ used: sql<number>`coalesce(sum(${files.sizeBytes}), 0)`.mapWith(Number) })
             .from(files)
@@ -30,6 +31,7 @@ export async function getUsage(userId: string, tier: Tier, executor: Executor = 
                 eq(files.ownerId, userId),
                 ne(files.fileStatus, "failed"),
                 or(isNull(files.expiresAt), gt(files.expiresAt, now)),
+                notDeleted(),
             )),
     ]);
 

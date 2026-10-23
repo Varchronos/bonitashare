@@ -64,6 +64,19 @@ export const fileVideos = pgTable('file_videos', {
     completedAt: timestamp('completed_at', { withTimezone: true }),
 });
 
+// Soft deletes: a file with a row here is gone to everyone (404s, off the user's list, out of the storage
+// quota) but can be restored until purgeAfter, when the worker's purge sweep deletes its objects and the
+// files row. Kept out of files so its write-heavy indexes don't grow another column to maintain.
+export const fileDeletions = pgTable('file_deletions', {
+    fileId: text('file_id').primaryKey().references(() => files.id, { onDelete: 'cascade' }),
+    deletedAt: timestamp('deleted_at', { withTimezone: true }).notNull().defaultNow(),
+    // Set by the database clock at delete time; restore and the purge sweep both compare it to now().
+    purgeAfter: timestamp('purge_after', { withTimezone: true }).notNull(),
+}, (table) => [
+    // Backs the purge sweep, which only looks for rows past purgeAfter.
+    index('file_deletions_purge_after_idx').on(table.purgeAfter),
+]);
+
 export const albums = pgTable('albums', {
     id: text('id').primaryKey(),
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),

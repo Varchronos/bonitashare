@@ -26,3 +26,8 @@ export const createVideoProcessingQueue = (connection: Redis) =>
 
 // Same reasoning as processUploadJobId: a stable id dedupes re-adds for the same file.
 export const transcodeHlsJobId = (fileId: string) => `${TRANSCODE_HLS_JOB}-${fileId}`;
+
+// A restore re-queues under a fresh id: the stable one may still be held by the job that stopped when the
+// file was deleted (kept a day as completed). If the original is in fact still waiting, both run and the
+// later one finds the video done and skips.
+export const restoreTranscodeJobId = (fileId: string) => `${transcodeHlsJobId(fileId)}-restore-${Date.now()}`;

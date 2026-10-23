@@ -14,6 +14,7 @@ const [usage, files] = await Promise.all([getUsage(cookie), getFiles(cookie)]);
 		<h1>Upload files</h1>
 		<p>Drop in anything you want to share. You'll get a link once it's uploaded.</p>
 		<FileUpload client:load usage={usage} files={files} />
+		<a class="deleted-link" href="/deleted">Recently deleted</a>
 	</section>
 </Layout>
 
@@ -30,6 +31,12 @@ const [usage, files] = await Promise.all([getUsage(cookie), getFiles(cookie)]);
 
 	p {
 		margin: 0 0 24px;
+		color: var(--muted);
+	}
+
+	.deleted-link {
+		display: inline-block;
+		margin-top: 24px;
 		color: var(--muted);
 	}
 </style>

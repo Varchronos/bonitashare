@@ -63,5 +63,16 @@ export type FilePage = {
   nextCursor: string | null
 }
 
+// A soft-deleted file, as GET /files/deleted lists them: restorable until purgeAfter.
+export type DeletedFile = {
+  id: string
+  filename: string
+  contentType: string | null
+  sizeBytes: number
+  thumbnailUrl: string | null
+  deletedAt: string
+  purgeAfter: string
+}
+
 export * from './tiers.js'
 export * from './utils/byte-conversion.js'

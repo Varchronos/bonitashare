@@ -1,8 +1,8 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
 import type { ApiResponse } from '@bonitashare/shared-types';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { fileVideos, files } from '@bonitashare/core/db';
+import { fileVideos, files, notDeleted } from '@bonitashare/core/db';
 import { BUCKET } from '@bonitashare/core/storage';
 import { hlsUrl, publicStorage, thumbUrl } from '@/storage/client.js';
 
@@ -29,7 +29,8 @@ type FileVideo = {
 // The checks every route serving a file shares. Replies with the failure itself and returns null,
 // so callers just return what this gives back when there's no file.
 async function findServableFile(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
-    const [file] = await db.select().from(files).where(eq(files.id, req.params.id));
+    // Soft-deleted files 404 for everyone, the owner included; they're restored from the deleted list.
+    const [file] = await db.select().from(files).where(and(eq(files.id, req.params.id), notDeleted()));
 
     // Same 404 for missing/private/unowned — don't reveal that a private file exists.
     if (!file || file.fileStatus !== 'uploaded' || (!file.isPublic && file.ownerId !== req.userId)) {

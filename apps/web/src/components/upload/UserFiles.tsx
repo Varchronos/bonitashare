@@ -5,7 +5,8 @@ import { useUploadStore } from '../../store/file-store';
 import { shareIdFor } from '../../lib/upload-task';
 import { fetchFiles } from '../../lib/files';
 import { copyLink } from './TaskRow';
-import { FileIcon } from './icons';
+import { FileIcon, TrashIcon } from './icons';
+import { useDeleteFile } from './useDeleteFile';
 
 // The user's finished uploads, from the server a page at a time. Uploads still in the local store
 // (in progress, or finished during this visit) are left out here: TaskList already shows them.
@@ -51,7 +52,12 @@ export default function UserFiles({ initial }: { initial: FilePage | null }) {
 			<h2>Your files</h2>
 			<ul className="file-list">
 				{visible.map((file) => (
-					<FileRow key={file.id} file={file} origin={origin} />
+					<FileRow
+						key={file.id}
+						file={file}
+						origin={origin}
+						onDeleted={() => setFiles((prev) => prev.filter((f) => f.id !== file.id))}
+					/>
 				))}
 			</ul>
 			{failed && <span className="status-text status-text-error">Couldn't load your files.</span>}
@@ -64,8 +70,9 @@ export default function UserFiles({ initial }: { initial: FilePage | null }) {
 	);
 }
 
-function FileRow({ file, origin }: { file: UserFile; origin: string }) {
+function FileRow({ file, origin, onDeleted }: { file: UserFile; origin: string; onDeleted: () => void }) {
 	const [thumbnailFailed, setThumbnailFailed] = useState(false);
+	const { remove, deleting, error } = useDeleteFile(file.id, file.filename, onDeleted);
 	const isVideo = file.contentType?.startsWith('video/') ?? false;
 	const link = `${origin}/f/${file.id}`;
 
@@ -86,9 +93,18 @@ function FileRow({ file, origin }: { file: UserFile; origin: string }) {
 			<div className="task-wrapper">
 				<div className="task-info">
 					<span className="file-name">{file.filename}</span>
+					<div className="task-actions">
+						<button type="button" className="icon-btn" aria-label="Delete" disabled={deleting} onClick={remove}>
+							<TrashIcon />
+						</button>
+					</div>
 				</div>
 				<div className="task-status-row">
-					<span className="status-text">{formatBytes(file.sizeBytes)}</span>
+					{error ? (
+						<span className="status-text status-text-error">{error}</span>
+					) : (
+						<span className="status-text">{formatBytes(file.sizeBytes)}</span>
+					)}
 					{file.expiresAt && (
 						<span className="status-pct">Expires {new Date(file.expiresAt).toLocaleDateString()}</span>
 					)}

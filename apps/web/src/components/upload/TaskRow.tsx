@@ -3,6 +3,7 @@ import { formatBytes } from '@bonitashare/shared-types';
 import { useUploadStore, type UploadTask } from '../../store/file-store';
 import { pauseUpload, resumeUpload, cancelUpload, shareIdFor, watchThumbnail } from '../../lib/upload-task';
 import { FileIcon, TrashIcon, CheckIcon, PauseIcon, PlayIcon, RetryIcon } from './icons';
+import { useDeleteFile } from './useDeleteFile';
 
 function linkFor(task: UploadTask) {
 	const id = shareIdFor(task);
@@ -37,6 +38,12 @@ export default function TaskRow({ id }: { id: string }) {
 
 	// Falls back to the file icon if the thumbnail URL stops resolving.
 	const [thumbnailFailed, setThumbnailFailed] = useState(false);
+	// Only reachable once done, when the upload has a share id to delete by.
+	const { remove, deleting, error: deleteError } = useDeleteFile(
+		task?.tusUploadUrl ? shareIdFor(task) : null,
+		task?.filename ?? '',
+		() => useUploadStore.getState().removeFile(id),
+	);
 
 	if (!task) return null;
 
@@ -63,7 +70,14 @@ export default function TaskRow({ id }: { id: string }) {
 				<div className="task-info">
 					<span className="file-name">{task.filename}</span>
 
-					{isDone && <CheckIcon />}
+					{isDone && (
+						<div className="task-actions">
+							<CheckIcon />
+							<button type="button" className="icon-btn" aria-label="Delete" disabled={deleting} onClick={remove}>
+								<TrashIcon />
+							</button>
+						</div>
+					)}
 
 					{!isDone && (
 						<div className="task-actions">
@@ -99,7 +113,11 @@ export default function TaskRow({ id }: { id: string }) {
 					)}
 					{isDone && (
 						<>
-							<span className="status-text status-text-success">Upload successful!</span>
+							{deleteError ? (
+								<span className="status-text status-text-error">{deleteError}</span>
+							) : (
+								<span className="status-text status-text-success">Upload successful!</span>
+							)}
 							<span className="status-pct">100%</span>
 						</>
 					)}

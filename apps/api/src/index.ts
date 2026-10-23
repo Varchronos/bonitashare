@@ -8,7 +8,7 @@ import fastifyCookie from "@fastify/cookie";
 import handleSession from "./plugins/custom/handleSession.js";
 import { ensureBucket } from "./storage/client.js";
 import { closeTusConnections } from "./upload/tusServer.js";
-import { fileProcessingQueue, redisConnection } from "./queue/client.js";
+import { fileProcessingQueue, redisConnection, videoProcessingQueue } from "./queue/client.js";
 import { pool } from "./db/client.js";
 import { onShutdown } from "@bonitashare/core/shutdown";
 
@@ -69,6 +69,7 @@ onShutdown("api", SHUTDOWN_DEADLINE_MS, async () => {
   await closeTusConnections();
   // BullMQ doesn't close a connection it was handed, so the queue and its connection close separately.
   await fileProcessingQueue.close();
+  await videoProcessingQueue.close();
   await redisConnection.quit();
   await pool.end();
 });

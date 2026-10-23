@@ -3,7 +3,7 @@
 pnpm monorepo:
 
 - `apps/api`: Fastify API (uploads, sessions, downloads)
-- `apps/worker`: BullMQ file-processing worker (thumbnails, reconcile sweep)
+- `apps/worker`: BullMQ file-processing worker (thumbnails, reconcile sweep, purge of deleted files)
 - `apps/web`: Astro frontend
 - `packages/core`: shared db, storage, queue and shutdown code, plus the drizzle migrations
 - `packages/shared-types`: types shared by api and web
@@ -61,6 +61,53 @@ pnpm build          # production build of all packages
   `dist/`, so run `pnpm typecheck` (or `pnpm --filter @bonitashare/core dev` to rebuild on save) to
   get core changes into editor types.
 - `docker compose -f docker-compose.prod.yml build` builds the production images locally.
+
+## File deletion
+
+Deleting a file is a soft delete that can be undone for a day. Removing it from storage happens
+later, whenever the worker gets to it.
+
+1. **Delete** (`DELETE /api/v1/files/:id`, the trash button on the upload page) adds a row to
+   `file_deletions` with `purge_after = now() + 1 day`. If the file expires sooner, `purge_after` is
+   its expiry instead. From that moment:
+   - the share page, `/raw` and thumbnail lookups return 404 for everyone, the owner included;
+   - the file is gone from the user's file list;
+   - its size no longer counts toward the storage quota, but weekly upload usage stays spent
+     (`upload_usage` keeps its row).
+
+   Only finished uploads can be deleted this way. In-progress ones are cancelled through tus.
+2. **Restore** (`POST /api/v1/files/:id/restore`, from the `/deleted` page) removes the row, if:
+   - `purge_after` hasn't passed;
+   - the file hasn't expired (checked on its own, in case the expiry changed after the delete);
+   - the file still fits the storage quota. Restore takes the same per-user lock as starting an
+     upload.
+
+   If the video's HLS status is still `pending`, the restore queues the encode again. Videos already
+   `done` keep their HLS, and `failed` ones aren't retried.
+3. **Purge.** Every 15 minutes the worker's `purge-deleted-files` job takes up to 50 rows whose
+   `purge_after` has passed. For each one it removes the original, the thumbnail and the HLS folder
+   from storage, then deletes the `files` row. That also removes its `file_deletions`, `file_videos`
+   and album rows. Each file is purged in one transaction that locks its `file_deletions` row, so a
+   restore and a purge can't both go through. If a storage call fails, the transaction rolls back
+   and the next run tries again.
+
+Processing that is still running when a file is deleted:
+
+- **Thumbnails and posters** finish normally, and the purge removes them along with the file.
+- **Video-worker:**
+  - It skips a deleted file at the start of a job and leaves its HLS status `pending`, so a restore
+    knows to queue the encode again.
+  - For sources over 200 MB, it checks again at every 10% of the encode and stops ffmpeg if the file
+    was deleted.
+  - Every video checks once more before the R2 upload and skips the upload if the file was deleted.
+
+Not handled yet:
+
+- Objects written after a file was purged (a thumbnail finishing at that moment) stay in their
+  bucket until there's a lifecycle rule.
+- Cloudflare's cache of `THUMB_PUBLIC_BASE_URL` and `HLS_PUBLIC_BASE_URL` isn't purged. Deleted
+  thumbnails and HLS files may still be served to anyone who already has their random URL.
+- Expired files that were never deleted aren't removed.
 
 ## Deploying
 
