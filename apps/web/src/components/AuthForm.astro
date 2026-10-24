@@ -5,28 +5,32 @@ interface Props {
 
 const { mode } = Astro.props;
 const isSignup = mode === 'signup';
+
+const labelClass = 'flex flex-col gap-1.5 text-sm font-medium';
+const inputClass =
+	'rounded-lg border border-border bg-page px-3 py-2.5 text-fg focus:outline-2 focus:-outline-offset-1 focus:outline-accent';
 ---
 
-<section class="container auth">
-	<div class="card">
-		<h1>{isSignup ? 'Create your account' : 'Welcome back'}</h1>
-		<p class="sub">{isSignup ? 'Keep your uploads in one place.' : 'Log in to manage your files.'}</p>
+<section class="mx-auto flex w-full max-w-page justify-center px-4 py-16">
+	<div class="w-full max-w-100 rounded-xl border border-border bg-surface px-6 py-8">
+		<h1 class="mb-1 text-2xl font-bold">{isSignup ? 'Create your account' : 'Welcome back'}</h1>
+		<p class="mb-6 text-muted">{isSignup ? 'Keep your uploads in one place.' : 'Log in to manage your files.'}</p>
 
 		<!-- method="post" so credentials never end up in the URL -->
-		<form method="post">
+		<form method="post" class="flex flex-col gap-4">
 			{
 				isSignup && (
-					<label>
+					<label class={labelClass}>
 						Display name
-						<input name="displayName" type="text" autocomplete="name" required />
+						<input name="displayName" type="text" autocomplete="name" required class={inputClass} />
 					</label>
 				)
 			}
-			<label>
+			<label class={labelClass}>
 				Email
-				<input name="email" type="email" autocomplete="email" required />
+				<input name="email" type="email" autocomplete="email" required class={inputClass} />
 			</label>
-			<label>
+			<label class={labelClass}>
 				Password
 				<input
 					name="password"
@@ -34,86 +38,20 @@ const isSignup = mode === 'signup';
 					autocomplete={isSignup ? 'new-password' : 'current-password'}
 					minlength={isSignup ? 8 : undefined}
 					required
+					class={inputClass}
 				/>
 			</label>
 			<button type="submit" class="btn btn-primary">{isSignup ? 'Sign up' : 'Log in'}</button>
 		</form>
 
-		<p class="switch">
+		<p class="mt-6 text-center text-sm text-muted">
 			{
 				isSignup ? (
-					<>Already have an account? <a href="/login">Log in</a></>
+					<>Already have an account? <a href="/login" class="text-accent underline">Log in</a></>
 				) : (
-					<>New to bonitashare? <a href="/signup">Sign up</a></>
+					<>New to bonitashare? <a href="/signup" class="text-accent underline">Sign up</a></>
 				)
 			}
 		</p>
 	</div>
 </section>
-
-<style>
-	.auth {
-		display: flex;
-		justify-content: center;
-		padding-top: 64px;
-		padding-bottom: 64px;
-	}
-
-	.card {
-		width: 100%;
-		max-width: 400px;
-		padding: 32px 24px;
-		border: 1px solid var(--border);
-		border-radius: var(--radius);
-		background: var(--surface);
-	}
-
-	h1 {
-		margin: 0 0 4px;
-		font-size: 1.5rem;
-	}
-
-	.sub {
-		margin: 0 0 24px;
-		color: var(--muted);
-	}
-
-	form {
-		display: flex;
-		flex-direction: column;
-		gap: 16px;
-	}
-
-	label {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		font-size: 0.9rem;
-		font-weight: 500;
-	}
-
-	input {
-		padding: 10px 12px;
-		border: 1px solid var(--border);
-		border-radius: 8px;
-		background: var(--bg);
-		color: var(--text);
-		font: inherit;
-	}
-
-	input:focus {
-		outline: 2px solid var(--accent);
-		outline-offset: -1px;
-	}
-
-	.switch {
-		margin: 24px 0 0;
-		color: var(--muted);
-		font-size: 0.9rem;
-		text-align: center;
-	}
-
-	.switch a {
-		color: var(--accent);
-	}
-</style>

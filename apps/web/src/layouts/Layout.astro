@@ -26,6 +26,27 @@ const fullTitle = title ? `${title} · bonitashare` : 'bonitashare';
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<link rel="icon" href="/favicon.ico" />
 		<meta name="generator" content={Astro.generator} />
+		<!-- Inline and blocking so the theme is set before first paint; a bundled script would flash light. -->
+		<script is:inline>
+			(() => {
+				const media = matchMedia('(prefers-color-scheme: dark)');
+				const saved = () => {
+					try {
+						return localStorage.getItem('theme');
+					} catch {
+						return null;
+					}
+				};
+				const apply = () => {
+					document.documentElement.dataset.theme = saved() ?? (media.matches ? 'dark' : 'light');
+				};
+				apply();
+				// Until the toggle saves a choice, follow the system when it switches.
+				media.addEventListener('change', () => {
+					if (!saved()) apply();
+				});
+			})();
+		</script>
 		<title>{fullTitle}</title>
 		<meta name="description" content={description} />
 		<meta property="og:site_name" content="bonitashare" />

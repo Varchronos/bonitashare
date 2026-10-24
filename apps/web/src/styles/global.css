@@ -1,87 +1,54 @@
-:root {
-	--bg: #fafafa;
-	--surface: #ffffff;
-	--text: #18181b;
-	--muted: #71717a;
-	--border: #e4e4e7;
-	--accent: #6d28d9;
-	--accent-hover: #5b21b6;
-	--accent-soft: #ede9fe;
-	--danger: #dc2626;
-	--danger-soft: #fee2e2;
-	--success: #16a34a;
-	--radius: 12px;
-	font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-	color-scheme: light dark;
+@import "tailwindcss";
+
+@theme {
+	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+	--container-page: 1080px;
+
+	--color-page: #fafafa;
+	--color-surface: #ffffff;
+	--color-fg: #18181b;
+	--color-muted: #71717a;
+	--color-border: #e4e4e7;
+	--color-accent: #6d28d9;
+	--color-accent-hover: #5b21b6;
+	--color-accent-soft: #ede9fe;
+	--color-danger: #dc2626;
+	--color-danger-soft: #fee2e2;
+	--color-success: #16a34a;
 }
 
-@media (prefers-color-scheme: dark) {
-	:root {
-		--bg: #09090b;
-		--surface: #18181b;
-		--text: #fafafa;
-		--muted: #a1a1aa;
-		--border: #27272a;
-		--accent: #8b5cf6;
-		--accent-hover: #a78bfa;
-		--accent-soft: #2e1065;
-		--danger-soft: #450a0a;
+/* The theme is <html data-theme>, set before first paint by the script in Layout.astro (saved choice,
+   else the system's) and flipped by the navbar toggle. `dark:` utilities follow it too. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* Utilities read the colour variables, so overriding them here is all dark mode needs. */
+:root[data-theme='dark'] {
+	color-scheme: dark;
+	--color-page: #09090b;
+	--color-surface: #18181b;
+	--color-fg: #fafafa;
+	--color-muted: #a1a1aa;
+	--color-border: #27272a;
+	--color-accent: #8b5cf6;
+	--color-accent-hover: #a78bfa;
+	--color-accent-soft: #2e1065;
+	--color-danger-soft: #450a0a;
+}
+
+@layer base {
+	html {
+		color-scheme: light;
+		@apply bg-page text-fg;
 	}
 }
 
-*,
-*::before,
-*::after {
-	box-sizing: border-box;
-}
+/* Shared by Astro pages and React islands alike. In the components layer so utilities on the element still win. */
+@layer components {
+	.btn {
+		@apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4.5 py-2.5 font-medium text-fg disabled:cursor-not-allowed disabled:opacity-60;
+	}
 
-html,
-body {
-	margin: 0;
-	min-height: 100%;
-	background: var(--bg);
-	color: var(--text);
-}
-
-a {
-	color: inherit;
-}
-
-.container {
-	width: 100%;
-	max-width: 1080px;
-	margin: 0 auto;
-	padding: 0 16px;
-}
-
-.btn {
-	display: inline-flex;
-	align-items: center;
-	justify-content: center;
-	gap: 8px;
-	padding: 10px 18px;
-	border-radius: 8px;
-	border: 1px solid var(--border);
-	background: var(--surface);
-	color: var(--text);
-	font: inherit;
-	font-weight: 500;
-	text-decoration: none;
-	cursor: pointer;
-}
-
-.btn-primary {
-	background: var(--accent);
-	border-color: var(--accent);
-	color: #fff;
-}
-
-.btn-primary:hover:not(:disabled) {
-	background: var(--accent-hover);
-	border-color: var(--accent-hover);
-}
-
-.btn:disabled {
-	opacity: 0.6;
-	cursor: not-allowed;
+	.btn-primary {
+		@apply border-accent bg-accent text-white not-disabled:hover:border-accent-hover not-disabled:hover:bg-accent-hover;
+	}
 }

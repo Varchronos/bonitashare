@@ -9,32 +9,10 @@ const files = await getDeletedFiles(cookie);
 ---
 
 <Layout title="Recently deleted" description="Files you deleted in the last day, which you can still restore.">
-	<section class="container page">
-		<h1>Recently deleted</h1>
-		<p>Deleted files can be restored for a day. After that they're removed for good.</p>
+	<section class="mx-auto w-full max-w-160 px-4 py-12">
+		<h1 class="mb-2 text-3xl font-bold">Recently deleted</h1>
+		<p class="mb-6 text-muted">Deleted files can be restored for a day. After that they're removed for good.</p>
 		<DeletedFiles client:load files={files} />
-		<a class="back" href="/upload">Back to uploads</a>
+		<a class="mt-6 inline-block underline" href="/upload">Back to uploads</a>
 	</section>
 </Layout>
-
-<style>
-	.page {
-		max-width: 640px;
-		padding-top: 48px;
-		padding-bottom: 48px;
-	}
-
-	h1 {
-		margin: 0 0 8px;
-	}
-
-	p {
-		margin: 0 0 24px;
-		color: var(--muted);
-	}
-
-	.back {
-		display: inline-block;
-		margin-top: 24px;
-	}
-</style>

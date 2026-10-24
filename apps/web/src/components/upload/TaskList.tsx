@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useUploadStore } from '../../store/file-store';
 import TaskRow from './TaskRow';
+import { moreButton } from './ui';
 
 const MAX_VISIBLE = 6;
 
@@ -22,18 +23,18 @@ export default function TaskList() {
 
 	return (
 		<>
-			<ul className="task-list">
+			<ul className="flex flex-col-reverse gap-2">
 				{visibleIds.map((id) => (
 					<TaskRow key={id} id={id} />
 				))}
 			</ul>
 			{hiddenCount > 0 && (
-				<button type="button" className="tasks-show-more" onClick={() => setExpanded(true)}>
+				<button type="button" className={moreButton} onClick={() => setExpanded(true)}>
 					Show {hiddenCount} more
 				</button>
 			)}
 			{expanded && ids.length > MAX_VISIBLE && (
-				<button type="button" className="tasks-show-more" onClick={() => setExpanded(false)}>
+				<button type="button" className={moreButton} onClick={() => setExpanded(false)}>
 					Show less
 				</button>
 			)}

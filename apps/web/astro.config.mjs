@@ -4,12 +4,16 @@ import { defineConfig } from 'astro/config';
 import react from '@astrojs/react';
 import partytown from '@astrojs/partytown';
 import node from '@astrojs/node';
+import tailwindcss from "@tailwindcss/vite";
 
 // https://astro.build/config
 export default defineConfig({
   output: 'server',
   adapter: node({ mode: 'standalone' }),
   integrations: [react(), partytown()],
+  vite:{
+    plugins:[tailwindcss()]
+  },
   security: {
     // Behind the Cloudflare tunnel node only sees plain HTTP. Without this, Astro trusts neither Host nor
     // X-Forwarded-Proto, builds every request URL as http://localhost:4321, and its origin check then

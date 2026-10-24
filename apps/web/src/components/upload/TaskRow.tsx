@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { formatBytes } from '@bonitashare/shared-types';
 import { useUploadStore, type UploadTask } from '../../store/file-store';
 import { pauseUpload, resumeUpload, cancelUpload, shareIdFor, watchThumbnail } from '../../lib/upload-task';
-import { FileIcon, TrashIcon, CheckIcon, PauseIcon, PlayIcon, RetryIcon } from './icons';
+import { TrashIcon, CheckIcon, PauseIcon, PlayIcon, RetryIcon } from './icons';
+import FileThumb from './FileThumb';
+import * as ui from './ui';
 import { useDeleteFile } from './useDeleteFile';
 
 function linkFor(task: UploadTask) {
@@ -36,8 +38,6 @@ export default function TaskRow({ id }: { id: string }) {
 		return () => controller.abort();
 	}, [id, awaitingThumbnail]);
 
-	// Falls back to the file icon if the thumbnail URL stops resolving.
-	const [thumbnailFailed, setThumbnailFailed] = useState(false);
 	// Only reachable once done, when the upload has a share id to delete by.
 	const { remove, deleting, error: deleteError } = useDeleteFile(
 		task?.tusUploadUrl ? shareIdFor(task) : null,
@@ -53,60 +53,52 @@ export default function TaskRow({ id }: { id: string }) {
 	const link = isDone ? linkFor(task) : null;
 
 	return (
-		<li>
-			<div className={`task-icon${isError ? ' task-icon-error' : ''}${isVideo ? ' task-icon-video' : ''}`}>
-				{task.thumbnailUrl && !thumbnailFailed ? (
-					<img
-						className={isVideo ? 'task-thumb task-thumb-video' : 'task-thumb'}
-						src={task.thumbnailUrl}
-						alt=""
-						onError={() => setThumbnailFailed(true)}
-					/>
-				) : (
-					<FileIcon />
-				)}
-			</div>
-			<div className="task-wrapper">
-				<div className="task-info">
-					<span className="file-name">{task.filename}</span>
+		<li className={ui.row}>
+			<FileThumb url={task.thumbnailUrl} isVideo={isVideo} isError={isError} />
+			<div className={ui.rowBody}>
+				<div className={ui.rowLine}>
+					<span className={ui.fileName}>{task.filename}</span>
 
 					{isDone && (
-						<div className="task-actions">
+						<div className={ui.rowActions}>
 							<CheckIcon />
-							<button type="button" className="icon-btn" aria-label="Delete" disabled={deleting} onClick={remove}>
+							<button type="button" className={ui.iconButton} aria-label="Delete" disabled={deleting} onClick={remove}>
 								<TrashIcon />
 							</button>
 						</div>
 					)}
 
 					{!isDone && (
-						<div className="task-actions">
+						<div className={ui.rowActions}>
 							{task.status === 'uploading' && (
-								<button type="button" className="icon-btn" aria-label="Pause" onClick={() => pauseUpload(id)}>
+								<button type="button" className={ui.iconButton} aria-label="Pause" onClick={() => pauseUpload(id)}>
 									<PauseIcon />
 								</button>
 							)}
 							{task.status === 'paused' && (
-								<button type="button" className="icon-btn" aria-label="Resume" onClick={() => resumeUpload(id)}>
+								<button type="button" className={ui.iconButton} aria-label="Resume" onClick={() => resumeUpload(id)}>
 									<PlayIcon />
 								</button>
 							)}
-							<button type="button" className="icon-btn" aria-label="Cancel" onClick={() => cancelUpload(id)}>
+							<button type="button" className={ui.iconButton} aria-label="Cancel" onClick={() => cancelUpload(id)}>
 								<TrashIcon />
 							</button>
 						</div>
 					)}
 				</div>
 
-				<div className={`progress${isDone ? ' progress-done' : ''}${isError ? ' progress-error' : ''}`}>
-					<div style={{ width: `${isError ? 100 : pct}%` }} />
+				<div className="h-1.5 overflow-hidden rounded-full bg-border">
+					<div
+						className={`h-full transition-[width] duration-100 ${isError ? 'bg-danger' : isDone ? 'bg-success' : 'bg-accent'}`}
+						style={{ width: `${isError ? 100 : pct}%` }}
+					/>
 				</div>
 
-				<div className="task-status-row">
+				<div className={ui.rowLine}>
 					{isError && (
 						<>
-							<span className="status-text status-text-error">{task.errorMessage ?? 'Upload failed! Please try again.'}</span>
-							<button type="button" className="retry-btn" onClick={() => resumeUpload(id)}>
+							<span className={ui.statusText('error')}>{task.errorMessage ?? 'Upload failed! Please try again.'}</span>
+							<button type="button" className="flex shrink-0 cursor-pointer items-center gap-1 text-sm font-medium text-accent hover:text-accent-hover" onClick={() => resumeUpload(id)}>
 								Try again <RetryIcon />
 							</button>
 						</>
@@ -114,27 +106,27 @@ export default function TaskRow({ id }: { id: string }) {
 					{isDone && (
 						<>
 							{deleteError ? (
-								<span className="status-text status-text-error">{deleteError}</span>
+								<span className={ui.statusText('error')}>{deleteError}</span>
 							) : (
-								<span className="status-text status-text-success">Upload successful!</span>
+								<span className={ui.statusText('success')}>Upload successful!</span>
 							)}
-							<span className="status-pct">100%</span>
+							<span className={ui.statusAside}>100%</span>
 						</>
 					)}
 					{!isError && !isDone && (
 						<>
-							<span className="status-text">{formatBytes(task.sizeBytes)}</span>
-							<span className="status-pct">{pct}%</span>
+							<span className={ui.statusText()}>{formatBytes(task.sizeBytes)}</span>
+							<span className={ui.statusAside}>{pct}%</span>
 						</>
 					)}
 				</div>
 
 				{link && (
-					<div className="link-row">
-						<a href={link} target="_blank" rel="noreferrer" className="link-url">
+					<div className={ui.linkRow}>
+						<a href={link} target="_blank" rel="noreferrer" className={ui.linkUrl}>
 							{link}
 						</a>
-						<button type="button" className="copy" onClick={() => copyLink(link)}>
+						<button type="button" className={ui.smallButton} onClick={() => copyLink(link)}>
 							Copy
 						</button>
 					</div>

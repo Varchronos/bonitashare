@@ -5,7 +5,9 @@ import { useUploadStore } from '../../store/file-store';
 import { shareIdFor } from '../../lib/upload-task';
 import { fetchFiles } from '../../lib/files';
 import { copyLink } from './TaskRow';
-import { FileIcon, TrashIcon } from './icons';
+import { TrashIcon } from './icons';
+import FileThumb from './FileThumb';
+import * as ui from './ui';
 import { useDeleteFile } from './useDeleteFile';
 
 // The user's finished uploads, from the server a page at a time. Uploads still in the local store
@@ -48,9 +50,9 @@ export default function UserFiles({ initial }: { initial: FilePage | null }) {
 	if (visible.length === 0 && !cursor && !failed) return null;
 
 	return (
-		<section className="user-files">
-			<h2>Your files</h2>
-			<ul className="file-list">
+		<section className="mt-8 flex flex-col gap-3">
+			<h2 className="text-lg font-bold">Your files</h2>
+			<ul className="flex flex-col gap-2">
 				{visible.map((file) => (
 					<FileRow
 						key={file.id}
@@ -60,9 +62,9 @@ export default function UserFiles({ initial }: { initial: FilePage | null }) {
 					/>
 				))}
 			</ul>
-			{failed && <span className="status-text status-text-error">Couldn't load your files.</span>}
+			{failed && <span className={ui.statusText('error')}>Couldn't load your files.</span>}
 			{(cursor || failed) && (
-				<button type="button" className="tasks-show-more" disabled={loading} onClick={() => load(cursor)}>
+				<button type="button" className={ui.moreButton} disabled={loading} onClick={() => load(cursor)}>
 					{loading ? 'Loading…' : failed ? 'Try again' : 'Load more'}
 				</button>
 			)}
@@ -71,49 +73,37 @@ export default function UserFiles({ initial }: { initial: FilePage | null }) {
 }
 
 function FileRow({ file, origin, onDeleted }: { file: UserFile; origin: string; onDeleted: () => void }) {
-	const [thumbnailFailed, setThumbnailFailed] = useState(false);
 	const { remove, deleting, error } = useDeleteFile(file.id, file.filename, onDeleted);
 	const isVideo = file.contentType?.startsWith('video/') ?? false;
 	const link = `${origin}/f/${file.id}`;
 
 	return (
-		<li>
-			<div className={`task-icon${isVideo ? ' task-icon-video' : ''}`}>
-				{file.thumbnailUrl && !thumbnailFailed ? (
-					<img
-						className={isVideo ? 'task-thumb task-thumb-video' : 'task-thumb'}
-						src={file.thumbnailUrl}
-						alt=""
-						onError={() => setThumbnailFailed(true)}
-					/>
-				) : (
-					<FileIcon />
-				)}
-			</div>
-			<div className="task-wrapper">
-				<div className="task-info">
-					<span className="file-name">{file.filename}</span>
-					<div className="task-actions">
-						<button type="button" className="icon-btn" aria-label="Delete" disabled={deleting} onClick={remove}>
+		<li className={ui.row}>
+			<FileThumb url={file.thumbnailUrl} isVideo={isVideo} />
+			<div className={ui.rowBody}>
+				<div className={ui.rowLine}>
+					<span className={ui.fileName}>{file.filename}</span>
+					<div className={ui.rowActions}>
+						<button type="button" className={ui.iconButton} aria-label="Delete" disabled={deleting} onClick={remove}>
 							<TrashIcon />
 						</button>
 					</div>
 				</div>
-				<div className="task-status-row">
+				<div className={ui.rowLine}>
 					{error ? (
-						<span className="status-text status-text-error">{error}</span>
+						<span className={ui.statusText('error')}>{error}</span>
 					) : (
-						<span className="status-text">{formatBytes(file.sizeBytes)}</span>
+						<span className={ui.statusText()}>{formatBytes(file.sizeBytes)}</span>
 					)}
 					{file.expiresAt && (
-						<span className="status-pct">Expires {new Date(file.expiresAt).toLocaleDateString()}</span>
+						<span className={ui.statusAside}>Expires {new Date(file.expiresAt).toLocaleDateString()}</span>
 					)}
 				</div>
-				<div className="link-row">
-					<a href={link} target="_blank" rel="noreferrer" className="link-url">
+				<div className={ui.linkRow}>
+					<a href={link} target="_blank" rel="noreferrer" className={ui.linkUrl}>
 						{link}
 					</a>
-					<button type="button" className="copy" onClick={() => copyLink(link)}>
+					<button type="button" className={ui.smallButton} onClick={() => copyLink(link)}>
 						Copy
 					</button>
 				</div>
