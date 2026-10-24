@@ -3,7 +3,10 @@ import type { ApiResponse } from '@bonitashare/shared-types';
 import { refreshSession } from './session';
 
 export type FileLink = {
+	// Opens in the browser: previews, og:image, /f/<id>/raw.
 	url: string;
+	// Saves to disk instead of opening, for the download button.
+	downloadUrl: string;
 	thumbnailUrl: string | null;
 	filename: string;
 	contentType: string | null;

@@ -9,7 +9,10 @@ import { hlsUrl, publicStorage, thumbUrl } from '@/storage/client.js';
 const URL_EXPIRY_SECONDS = 60 * 60;
 
 type FileLink = {
+    // Opens in the browser: previews, og:image, /f/<id>/raw.
     url: string;
+    // Saves to disk instead of opening, for the download button.
+    downloadUrl: string;
     // Null until the worker has made one, or for files that don't get thumbnails.
     thumbnailUrl: string | null;
     filename: string;
@@ -47,12 +50,13 @@ async function findServableFile(req: FastifyRequest<{ Params: { id: string } }>,
 }
 
 // Storage only knows the object key (uploads/<id>), so without this a saved file is named after the
-// id. Inline keeps previews and "Open file" working in the browser; filename* carries the real name
-// (any script), filename an ASCII fallback for clients that don't read filename* (RFC 6266).
-function contentDisposition(filename: string) {
+// id. Inline keeps previews working in the browser; attachment makes it save the file instead.
+// filename* carries the real name (any script), filename an ASCII fallback for clients that don't
+// read filename* (RFC 6266).
+function contentDisposition(type: 'inline' | 'attachment', filename: string) {
     const fallback = filename.replace(/[^\x20-\x7e]|["\\]/g, '_');
     const encoded = encodeURIComponent(filename).replace(/['()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
-    return `inline; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+    return `${type}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
 }
 
 // Uploads are stored as binary/octet-stream, which link-preview crawlers won't take as an image or
@@ -68,14 +72,23 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
         const { file, failure } = await findServableFile(req, reply);
         if (!file) return failure;
 
-        const url = await publicStorage.presignedGetObject(BUCKET, file.storageKey, URL_EXPIRY_SECONDS, {
-            'response-content-disposition': contentDisposition(file.filename),
-            ...(file.contentType && INLINE_MEDIA_TYPES.has(file.contentType) ? { 'response-content-type': file.contentType } : {}),
-        });
+        // With S3_REGION set, signing is local (no request to storage), so two URLs cost nothing extra.
+        const [url, downloadUrl] = await Promise.all([
+            publicStorage.presignedGetObject(BUCKET, file.storageKey, URL_EXPIRY_SECONDS, {
+                'response-content-disposition': contentDisposition('inline', file.filename),
+                ...(file.contentType && INLINE_MEDIA_TYPES.has(file.contentType) ? { 'response-content-type': file.contentType } : {}),
+            }),
+            // octet-stream as well as attachment, so no browser tries to render it.
+            publicStorage.presignedGetObject(BUCKET, file.storageKey, URL_EXPIRY_SECONDS, {
+                'response-content-disposition': contentDisposition('attachment', file.filename),
+                'response-content-type': 'application/octet-stream',
+            }),
+        ]);
 
         return {
             data: {
                 url,
+                downloadUrl,
                 thumbnailUrl: file.thumbKey ? thumbUrl(file.thumbKey) : null,
                 filename: file.filename,
                 contentType: file.contentType,
