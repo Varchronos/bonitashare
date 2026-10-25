@@ -6,16 +6,15 @@ export default function FileThumb({ url, isVideo, isError = false }: { url: stri
 	const [failed, setFailed] = useState(false);
 
 	return (
-		// Videos are 16:9 so a landscape poster shows whole instead of cropped to a square; a portrait one
-		// is pillarboxed. Same height as the square icon, so rows stay aligned.
+		// Inset at the top of the card, Drive-style: full width, 16:9, rounded on its own.
 		<div
-			className={`flex h-10 shrink-0 items-center justify-center rounded-lg ${isVideo ? 'aspect-video' : 'w-10'} ${
-				isError ? 'bg-danger-soft text-danger' : 'bg-accent-soft text-accent'
+			className={`flex aspect-video w-full shrink-0 items-center justify-center overflow-hidden rounded-lg ${
+				isError ? 'bg-error-container text-on-error-container' : 'bg-secondary-container text-on-secondary-container'
 			}`}
 		>
 			{url && !failed ? (
 				<img
-					className={`size-full rounded-[inherit] ${isVideo ? 'bg-black object-contain' : 'object-cover'}`}
+					className={`size-full object-contain ${isVideo ? 'bg-black' : ''}`}
 					src={url}
 					alt=""
 					onError={() => setFailed(true)}

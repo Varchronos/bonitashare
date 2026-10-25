@@ -11,9 +11,9 @@ const [usage, files] = await Promise.all([getUsage(cookie), getFiles(cookie)]);
 
 <Layout title="Upload" description="Upload files and get a share link for each as soon as it finishes.">
 	<section class="mx-auto w-full max-w-page px-4 py-16 max-[800px]:pt-8">
-		<h1 class="mb-2 text-3xl font-bold">Upload files</h1>
-		<p class="mb-6 text-muted">Drop in anything you want to share. You'll get a link once it's uploaded.</p>
+		<h1 class="mb-2 text-headline font-medium">Upload files</h1>
+		<p class="mb-8 text-on-surface-variant">Drop in anything you want to share. You'll get a link once it's uploaded.</p>
 		<FileUpload client:load usage={usage} files={files} />
-		<a class="mt-6 inline-block text-muted underline" href="/deleted">Recently deleted</a>
+		<a class="btn btn-text mt-4 -ml-3" href="/deleted">Recently deleted</a>
 	</section>
 </Layout>

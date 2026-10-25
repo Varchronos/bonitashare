@@ -2,9 +2,9 @@ import type { ApiResponse, DeletedFile, FilePage } from '@bonitashare/shared-typ
 
 // Server-to-server during render, like lib/usage.ts, so the first page of the user's files is in the
 // first HTML. Null if the API couldn't answer — the list then loads from the browser instead.
-export async function getFiles(cookie: string): Promise<FilePage | null> {
+export async function getFiles(cookie: string, limit?: number): Promise<FilePage | null> {
 	try {
-		const res = await fetch(`${process.env.API_INTERNAL_URL}/api/v1/files`, {
+		const res = await fetch(`${process.env.API_INTERNAL_URL}/api/v1/files${limit ? `?limit=${limit}` : ''}`, {
 			headers: { cookie },
 		});
 		const { data } = (await res.json()) as ApiResponse<FilePage>;

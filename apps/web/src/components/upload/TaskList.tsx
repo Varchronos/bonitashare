@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useUploadStore } from '../../store/file-store';
 import TaskRow from './TaskRow';
-import { moreButton } from './ui';
 
 const MAX_VISIBLE = 6;
 
@@ -16,25 +15,25 @@ export default function TaskList() {
 
 	if (ids.length === 0) return null;
 
-	// Newest-first via CSS (column-reverse), so "visible" is the tail of
-	// insertion order — the most recently added uploads.
-	const visibleIds = expanded ? ids : ids.slice(-MAX_VISIBLE);
+	// The store keeps insertion order, so "visible" is its tail — the most
+	// recently added uploads — reversed to show newest first.
+	const visibleIds = (expanded ? ids : ids.slice(-MAX_VISIBLE)).toReversed();
 	const hiddenCount = ids.length - visibleIds.length;
 
 	return (
 		<>
-			<ul className="flex flex-col-reverse gap-2">
+			<ul className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
 				{visibleIds.map((id) => (
 					<TaskRow key={id} id={id} />
 				))}
 			</ul>
 			{hiddenCount > 0 && (
-				<button type="button" className={moreButton} onClick={() => setExpanded(true)}>
+				<button type="button" className="btn btn-outlined self-start" onClick={() => setExpanded(true)}>
 					Show {hiddenCount} more
 				</button>
 			)}
 			{expanded && ids.length > MAX_VISIBLE && (
-				<button type="button" className={moreButton} onClick={() => setExpanded(false)}>
+				<button type="button" className="btn btn-outlined self-start" onClick={() => setExpanded(false)}>
 					Show less
 				</button>
 			)}

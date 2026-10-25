@@ -2,16 +2,16 @@ import { useState } from 'react';
 import { formatBytes, type DeletedFile } from '@bonitashare/shared-types';
 import { restoreFile } from '../../lib/files';
 import FileThumb from './FileThumb';
-import * as ui from './ui';
+import { RestoreIcon } from './icons';
 
 // The recently deleted page's list. Rendered from the server's list once; a restore only changes the
 // row it was clicked on, so nothing here refetches.
 export default function DeletedFiles({ files }: { files: DeletedFile[] | null }) {
-	if (!files) return <span className={ui.statusText('error')}>Couldn't load your deleted files.</span>;
-	if (files.length === 0) return <p className={ui.statusText()}>Nothing deleted in the last day.</p>;
+	if (!files) return <span className="text-sm text-error">Couldn't load your deleted files.</span>;
+	if (files.length === 0) return <p className="text-sm text-on-surface-variant">Nothing deleted in the last day.</p>;
 
 	return (
-		<ul className="flex flex-col gap-2">
+		<ul className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
 			{files.map((file) => (
 				<DeletedRow key={file.id} file={file} />
 			))}
@@ -39,31 +39,36 @@ function DeletedRow({ file }: { file: DeletedFile }) {
 	}
 
 	return (
-		<li className={ui.row}>
+		<li className="card flex min-w-0 flex-col p-2 transition-colors hover:bg-surface-container-high">
 			<FileThumb url={file.thumbnailUrl} isVideo={isVideo} />
-			<div className={ui.rowBody}>
-				<div className={ui.rowLine}>
-					<span className={ui.fileName}>{file.filename}</span>
-					{!restored && (
-						<button type="button" className={ui.smallButton} disabled={restoring} onClick={restore}>
-							{restoring ? 'Restoring…' : 'Restore'}
-						</button>
-					)}
-				</div>
-				<div className={ui.rowLine}>
+			<div className="flex min-w-0 flex-1 flex-col gap-2 px-2 pt-3 pb-1">
+				<span className="truncate text-sm font-medium text-on-surface">{file.filename}</span>
+				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 					{error ? (
-						<span className={ui.statusText('error')}>{error}</span>
+						<span className="min-w-0 truncate text-xs text-error">{error}</span>
 					) : restored ? (
-						<span className={ui.statusText('success')}>
-							Restored. <a href={`/f/${file.id}`} className="underline">Open it</a>
+						<span className="min-w-0 truncate text-xs text-success">
+							Restored. <a href={`/f/${file.id}`} target='_blank' className="underline">Open it</a>
 						</span>
 					) : (
-						<span className={ui.statusText()}>{formatBytes(file.sizeBytes)}</span>
+						<span className="min-w-0 truncate text-xs text-on-surface-variant">{formatBytes(file.sizeBytes)}</span>
 					)}
 					{!restored && (
-						<span className={ui.statusAside}>Restorable until {new Date(file.purgeAfter).toLocaleString()}</span>
+						<span className="min-w-0 text-xs text-on-surface-variant">Restore before {new Date(file.purgeAfter).toLocaleString()}</span>
 					)}
 				</div>
+				{/* mt-auto pins it to the card's bottom, so buttons line up across a grid row of uneven cards. */}
+				{!restored && (
+					<button
+						type="button"
+						className="btn mt-auto w-full bg-success-container text-on-success-container not-disabled:hover:shadow-sm disabled:cursor-progress disabled:opacity-70"
+						disabled={restoring}
+						onClick={restore}
+					>
+						<RestoreIcon className={restoring ? 'animate-spin [animation-direction:reverse]' : undefined} />
+						{restoring ? 'Restoring…' : 'Restore'}
+					</button>
+				)}
 			</div>
 		</li>
 	);

@@ -1,20 +1,43 @@
 @import "tailwindcss";
 
+/* Material 3. Colour roles from an M3 tonal scheme with an orange seed, plus a green success set M3
+   doesn't define. `on-*` is the colour for text and icons sitting on the role it names. */
 @theme {
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 	--container-page: 1080px;
 
-	--color-page: #fafafa;
-	--color-surface: #ffffff;
-	--color-fg: #18181b;
-	--color-muted: #71717a;
-	--color-border: #e4e4e7;
-	--color-accent: #6d28d9;
-	--color-accent-hover: #5b21b6;
-	--color-accent-soft: #ede9fe;
-	--color-danger: #dc2626;
-	--color-danger-soft: #fee2e2;
-	--color-success: #16a34a;
+	/* M3 type scale: display, headline and title. Body and label sizes are Tailwind's own. */
+	--text-display: clamp(2.25rem, 5vw, 3.5rem);
+	--text-display--line-height: 1.15;
+	--text-display--letter-spacing: -0.01em;
+	--text-headline: 2rem;
+	--text-headline--line-height: 2.25rem;
+	--text-title: 1.375rem;
+	--text-title--line-height: 1.75rem;
+
+	--color-primary: #8b5000;
+	--color-on-primary: #ffffff;
+	--color-primary-container: #ffdcbe;
+	--color-on-primary-container: #6a3c00;
+	--color-secondary-container: #fedcbe;
+	--color-on-secondary-container: #59422c;
+
+	--color-surface: #fff8f5;
+	--color-surface-container-low: #fcf2eb;
+	--color-surface-container: #f6ece5;
+	--color-surface-container-high: #f0e6df;
+	--color-on-surface: #211a14;
+	--color-on-surface-variant: #51443a;
+	--color-outline: #84746a;
+	--color-outline-variant: #d6c3b6;
+
+	--color-error: #b3261e;
+	--color-error-container: #f9dedc;
+	--color-on-error-container: #8c1d18;
+
+	--color-success: #386a20;
+	--color-success-container: #b8f397;
+	--color-on-success-container: #205107;
 }
 
 /* The theme is <html data-theme>, set before first paint by the script in Layout.astro (saved choice,
@@ -24,31 +47,108 @@
 /* Utilities read the colour variables, so overriding them here is all dark mode needs. */
 :root[data-theme='dark'] {
 	color-scheme: dark;
-	--color-page: #09090b;
-	--color-surface: #18181b;
-	--color-fg: #fafafa;
-	--color-muted: #a1a1aa;
-	--color-border: #27272a;
-	--color-accent: #8b5cf6;
-	--color-accent-hover: #a78bfa;
-	--color-accent-soft: #2e1065;
-	--color-danger-soft: #450a0a;
+	--color-primary: #ffb870;
+	--color-on-primary: #4a2800;
+	--color-primary-container: #693c00;
+	--color-on-primary-container: #ffdcbe;
+	--color-secondary-container: #59422c;
+	--color-on-secondary-container: #fedcbe;
+
+	--color-surface: #19120c;
+	--color-surface-container-low: #221a14;
+	--color-surface-container: #261e18;
+	--color-surface-container-high: #31281f;
+	--color-on-surface: #f0dfd4;
+	--color-on-surface-variant: #d6c3b6;
+	--color-outline: #9f8d82;
+	--color-outline-variant: #51443a;
+
+	--color-error: #f2b8b5;
+	--color-error-container: #8c1d18;
+	--color-on-error-container: #f9dedc;
+
+	--color-success: #9dd67d;
+	--color-success-container: #205107;
+	--color-on-success-container: #b8f397;
 }
 
 @layer base {
 	html {
 		color-scheme: light;
-		@apply bg-page text-fg;
+		@apply bg-surface text-on-surface antialiased;
+	}
+}
+
+/* M3's state layer: hover and press tint an element with its own content colour (8% / 12%), so one
+   rule works on every button colour, light or dark. An overlay at an opacity rather than a color-mix()
+   background, which older browsers would fall back on as a solid block hiding the label. isolate keeps
+   the z-index:-1 overlay above the element's own background but under its content. A utility, not a
+   component class, so the components below can @apply it. */
+@utility state-layer {
+	position: relative;
+	isolation: isolate;
+	transition: box-shadow 150ms;
+
+	&::before {
+		content: '';
+		position: absolute;
+		inset: 0;
+		z-index: -1;
+		border-radius: inherit;
+		background: currentColor;
+		opacity: 0;
+		transition: opacity 150ms;
+		pointer-events: none;
+	}
+
+	&:not(:disabled):hover::before {
+		opacity: 0.08;
+	}
+
+	&:not(:disabled):active::before,
+	&:focus-visible::before {
+		opacity: 0.12;
 	}
 }
 
 /* Shared by Astro pages and React islands alike. In the components layer so utilities on the element still win. */
 @layer components {
+	/* Buttons: a pill, then one of the M3 styles below. */
 	.btn {
-		@apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4.5 py-2.5 font-medium text-fg disabled:cursor-not-allowed disabled:opacity-60;
+		@apply state-layer inline-flex h-10 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-full px-6 text-sm font-medium tracking-[0.01em] whitespace-nowrap focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40;
 	}
 
-	.btn-primary {
-		@apply border-accent bg-accent text-white not-disabled:hover:border-accent-hover not-disabled:hover:bg-accent-hover;
+	.btn-filled {
+		@apply bg-primary text-on-primary not-disabled:hover:shadow-sm;
+	}
+
+	.btn-tonal {
+		@apply bg-secondary-container text-on-secondary-container not-disabled:hover:shadow-sm;
+	}
+
+	.btn-outlined {
+		@apply border border-outline text-primary;
+	}
+
+	.btn-text {
+		@apply px-3 text-primary;
+	}
+
+	/* Smaller buttons for inside cards. */
+	.btn-sm {
+		@apply h-8 px-4 text-xs;
+	}
+
+	.icon-btn {
+		@apply state-layer inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-full text-on-surface-variant focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-40;
+	}
+
+	.icon-btn-sm {
+		@apply size-8;
+	}
+
+	/* M3 cards: a tonal surface with no border, a step up from the page. */
+	.card {
+		@apply rounded-xl bg-surface-container;
 	}
 }

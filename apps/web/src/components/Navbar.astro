@@ -10,9 +10,10 @@ const links = [
 const path = Astro.url.pathname.replace(/\/$/, '') || '/';
 ---
 
-<header class="sticky top-0 z-10 border-b border-border bg-page/85 backdrop-blur-sm">
+<!-- M3 top app bar: the surface colour, no divider. -->
+<header class="sticky top-0 z-10 bg-surface">
 	<nav class="mx-auto flex h-16 w-full max-w-page items-center justify-between gap-4 px-4">
-		<a href="/" class="flex items-center gap-2.5 text-lg font-bold" aria-label="bonitashare home">
+		<a href="/" class="flex items-center gap-3 text-title text-on-surface" aria-label="bonitashare home">
 			<img src={logo.src} alt="" width="28" height="28" />
 			<span class="max-[480px]:hidden">bonitashare</span>
 		</a>
@@ -24,7 +25,7 @@ const path = Astro.url.pathname.replace(/\/$/, '') || '/';
 						<a
 							href={href}
 							aria-current={path === href ? 'page' : undefined}
-							class="block rounded-lg px-3 py-2 font-medium text-muted hover:bg-accent-soft hover:text-fg aria-[current=page]:bg-accent-soft aria-[current=page]:text-fg max-[480px]:px-2"
+							class="state-layer flex h-10 items-center rounded-full px-4 text-sm font-medium text-on-surface-variant aria-[current=page]:bg-secondary-container aria-[current=page]:text-on-secondary-container max-[480px]:px-3"
 						>
 							{label}
 						</a>
@@ -36,7 +37,7 @@ const path = Astro.url.pathname.replace(/\/$/, '') || '/';
 					type="button"
 					id="theme-toggle"
 					aria-label="Toggle dark mode"
-					class="flex cursor-pointer items-center rounded-lg p-2 text-muted hover:bg-accent-soft hover:text-fg"
+					class="icon-btn"
 				>
 					<!-- Moon in light mode, sun in dark: the icon shows what a click switches to. -->
 					<svg class="dark:hidden" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -49,7 +50,7 @@ const path = Astro.url.pathname.replace(/\/$/, '') || '/';
 				</button>
 			</li>
 			<li>
-				<a href="/signup" class="btn btn-primary ml-1 px-3.5 py-2" aria-current={path === '/signup' ? 'page' : undefined}>
+				<a href="/signup" class="btn btn-filled ml-2 max-[480px]:px-4" aria-current={path === '/signup' ? 'page' : undefined}>
 					Sign up
 				</a>
 			</li>

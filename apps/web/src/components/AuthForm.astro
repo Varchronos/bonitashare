@@ -6,50 +6,55 @@ interface Props {
 const { mode } = Astro.props;
 const isSignup = mode === 'signup';
 
-const labelClass = 'flex flex-col gap-1.5 text-sm font-medium';
+// M3 outlined text field. The label sits inside the field and floats onto its border once the input is
+// focused or filled; placeholder=" " is what lets :placeholder-shown tell an empty field apart.
+const fieldClass = 'relative block';
 const inputClass =
-	'rounded-lg border border-border bg-page px-3 py-2.5 text-fg focus:outline-2 focus:-outline-offset-1 focus:outline-accent';
+	'peer h-14 w-full rounded-sm border border-outline bg-transparent px-4 text-base text-on-surface outline-none hover:border-on-surface focus:border-2 focus:border-primary focus:px-[15px]';
+const labelClass =
+	'pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 bg-surface-container-low px-1 text-base text-on-surface-variant transition-all peer-focus:top-0 peer-focus:text-xs peer-focus:text-primary peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:text-xs';
 ---
 
 <section class="mx-auto flex w-full max-w-page justify-center px-4 py-16">
-	<div class="w-full max-w-100 rounded-xl border border-border bg-surface px-6 py-8">
-		<h1 class="mb-1 text-2xl font-bold">{isSignup ? 'Create your account' : 'Welcome back'}</h1>
-		<p class="mb-6 text-muted">{isSignup ? 'Keep your uploads in one place.' : 'Log in to manage your files.'}</p>
+	<div class="w-full max-w-100 rounded-[28px] bg-surface-container-low px-6 py-8 sm:px-8">
+		<h1 class="mb-2 text-headline">{isSignup ? 'Create your account' : 'Welcome back'}</h1>
+		<p class="mb-8 text-sm text-on-surface-variant">{isSignup ? 'Keep your uploads in one place.' : 'Log in to manage your files.'}</p>
 
 		<!-- method="post" so credentials never end up in the URL -->
-		<form method="post" class="flex flex-col gap-4">
+		<form method="post" class="flex flex-col gap-5">
 			{
 				isSignup && (
-					<label class={labelClass}>
-						Display name
-						<input name="displayName" type="text" autocomplete="name" required class={inputClass} />
+					<label class={fieldClass}>
+						<input name="displayName" type="text" autocomplete="name" required placeholder=" " class={inputClass} />
+						<span class={labelClass}>Display name</span>
 					</label>
 				)
 			}
-			<label class={labelClass}>
-				Email
-				<input name="email" type="email" autocomplete="email" required class={inputClass} />
+			<label class={fieldClass}>
+				<input name="email" type="email" autocomplete="email" required placeholder=" " class={inputClass} />
+				<span class={labelClass}>Email</span>
 			</label>
-			<label class={labelClass}>
-				Password
+			<label class={fieldClass}>
 				<input
 					name="password"
 					type="password"
 					autocomplete={isSignup ? 'new-password' : 'current-password'}
 					minlength={isSignup ? 8 : undefined}
 					required
+					placeholder=" "
 					class={inputClass}
 				/>
+				<span class={labelClass}>Password</span>
 			</label>
-			<button type="submit" class="btn btn-primary">{isSignup ? 'Sign up' : 'Log in'}</button>
+			<button type="submit" class="btn btn-filled mt-2 w-full">{isSignup ? 'Sign up' : 'Log in'}</button>
 		</form>
 
-		<p class="mt-6 text-center text-sm text-muted">
+		<p class="mt-6 text-center text-sm text-on-surface-variant">
 			{
 				isSignup ? (
-					<>Already have an account? <a href="/login" class="text-accent underline">Log in</a></>
+					<>Already have an account? <a href="/login" class="btn btn-text btn-sm">Log in</a></>
 				) : (
-					<>New to bonitashare? <a href="/signup" class="text-accent underline">Sign up</a></>
+					<>New to bonitashare? <a href="/signup" class="btn btn-text btn-sm">Sign up</a></>
 				)
 			}
 		</p>

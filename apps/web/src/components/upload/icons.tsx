@@ -64,3 +64,12 @@ export function RetryIcon({ size = 14 }: IconProps) {
 		</svg>
 	);
 }
+
+export function RestoreIcon({ size = 18, className }: IconProps & { className?: string }) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" className={className} {...base}>
+			<path d="M4 12a8 8 0 1 0 2.3-5.6" />
+			<path d="M4 4v4h4" />
+		</svg>
+	);
+}

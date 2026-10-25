@@ -7,9 +7,18 @@ import TaskList from './TaskList';
 import UsageMeter from './UsageMeter';
 import UserFiles from './UserFiles';
 
-// `files` is the first page of the user's finished uploads; the list is shown only when it's passed
-// (the upload page does, the homepage hero doesn't). Null means the page tried and the API failed.
-export default function FileUpload({ usage, files }: { usage: Usage | null; files?: FilePage | null }) {
+// `files` is the first page of the user's finished uploads; the list is shown only when it's passed.
+// Null means the page tried and the API failed. `filesLimit` cuts the list short with a link to the
+// upload page for the rest (the homepage's recent uploads).
+export default function FileUpload({
+	usage,
+	files,
+	filesLimit,
+}: {
+	usage: Usage | null;
+	files?: FilePage | null;
+	filesLimit?: number;
+}) {
 	const inputRef = useRef<HTMLInputElement>(null);
 
 	// Into the store on mount, not during render: on the server the store is shared by every request.
@@ -50,7 +59,7 @@ export default function FileUpload({ usage, files }: { usage: Usage | null; file
 			<UsageMeter initial={usage} />
 
 			<div
-				className="flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-dashed border-border bg-surface px-4 py-10 text-center text-muted transition-colors duration-150 hover:border-accent hover:bg-accent-soft focus-visible:border-accent focus-visible:bg-accent-soft focus-visible:outline-none"
+				className="flex cursor-pointer flex-col items-center gap-1 rounded-[28px] border-2 border-dashed border-outline-variant bg-surface-container-low px-4 py-12 text-center text-on-surface-variant transition-colors duration-150 hover:border-primary hover:bg-surface-container focus-visible:border-primary focus-visible:bg-surface-container focus-visible:outline-none"
 				role="button"
 				tabIndex={0}
 				onClick={() => inputRef.current?.click()}
@@ -66,10 +75,12 @@ export default function FileUpload({ usage, files }: { usage: Usage | null; file
 					enqueue(e.dataTransfer.files);
 				}}
 			>
-				<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-					<path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" strokeLinecap="round" strokeLinejoin="round" />
-				</svg>
-				<p className="mt-2 font-semibold text-fg">Drag &amp; drop files here</p>
+				<div className="mb-3 flex size-16 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
+					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+						<path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" strokeLinecap="round" strokeLinejoin="round" />
+					</svg>
+				</div>
+				<p className="text-base font-medium text-on-surface">Drag &amp; drop files here</p>
 				<p className="text-sm">or click to browse — uploads start right away</p>
 				<input
 					ref={inputRef}
@@ -84,7 +95,7 @@ export default function FileUpload({ usage, files }: { usage: Usage | null; file
 			</div>
 
 			<TaskList />
-			{files !== undefined && <UserFiles initial={files} />}
+			{files !== undefined && <UserFiles initial={files} limit={filesLimit} />}
 		</div>
 	);
 }

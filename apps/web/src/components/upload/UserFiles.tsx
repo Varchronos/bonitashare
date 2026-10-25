@@ -7,12 +7,13 @@ import { fetchFiles } from '../../lib/files';
 import { copyLink } from './TaskRow';
 import { TrashIcon } from './icons';
 import FileThumb from './FileThumb';
-import * as ui from './ui';
+import ShareLinks from './ShareLinks';
 import { useDeleteFile } from './useDeleteFile';
 
 // The user's finished uploads, from the server a page at a time. Uploads still in the local store
 // (in progress, or finished during this visit) are left out here: TaskList already shows them.
-export default function UserFiles({ initial }: { initial: FilePage | null }) {
+// With `limit`, only the newest few, and a link to the upload page in place of "Load more".
+export default function UserFiles({ initial, limit }: { initial: FilePage | null; limit?: number }) {
 	const [files, setFiles] = useState<UserFile[]>(initial?.files ?? []);
 	const [cursor, setCursor] = useState(initial?.nextCursor ?? null);
 	const [loading, setLoading] = useState(false);
@@ -46,13 +47,13 @@ export default function UserFiles({ initial }: { initial: FilePage | null }) {
 		if (!initial) load(null);
 	}, []);
 
-	const visible = files.filter((f) => !localIds.includes(f.id));
-	if (visible.length === 0 && !cursor && !failed) return null;
+	const visible = files.filter((f) => !localIds.includes(f.id)).slice(0, limit);
+	if (visible.length === 0 && (!cursor || limit) && !failed) return null;
 
 	return (
 		<section className="mt-8 flex flex-col gap-3">
-			<h2 className="text-lg font-bold">Your files</h2>
-			<ul className="flex flex-col gap-2">
+			<h2 className="text-title">{limit ? 'Recent uploads' : 'Your files'}</h2>
+			<ul className="grid grid-cols-2 gap-2 sm:gap-3 md:grid-cols-3 lg:grid-cols-4">
 				{visible.map((file) => (
 					<FileRow
 						key={file.id}
@@ -62,11 +63,16 @@ export default function UserFiles({ initial }: { initial: FilePage | null }) {
 					/>
 				))}
 			</ul>
-			{failed && <span className={ui.statusText('error')}>Couldn't load your files.</span>}
-			{(cursor || failed) && (
-				<button type="button" className={ui.moreButton} disabled={loading} onClick={() => load(cursor)}>
+			{failed && <span className="text-sm text-error">Couldn't load your files.</span>}
+			{(failed || (cursor && !limit)) && (
+				<button type="button" className="btn btn-outlined self-start" disabled={loading} onClick={() => load(cursor)}>
 					{loading ? 'Loading…' : failed ? 'Try again' : 'Load more'}
 				</button>
+			)}
+			{limit && !failed && (
+				<a href="/upload" className="btn btn-tonal self-start">
+					View all uploads →
+				</a>
 			)}
 		</section>
 	);
@@ -78,34 +84,35 @@ function FileRow({ file, origin, onDeleted }: { file: UserFile; origin: string; 
 	const link = `${origin}/f/${file.id}`;
 
 	return (
-		<li className={ui.row}>
+		<li className="card flex min-w-0 flex-col p-2 transition-colors hover:bg-surface-container-high">
 			<FileThumb url={file.thumbnailUrl} isVideo={isVideo} />
-			<div className={ui.rowBody}>
-				<div className={ui.rowLine}>
-					<span className={ui.fileName}>{file.filename}</span>
-					<div className={ui.rowActions}>
-						<button type="button" className={ui.iconButton} aria-label="Delete" disabled={deleting} onClick={remove}>
+			<div className="flex min-w-0 flex-1 flex-col gap-2 px-2 pt-3 pb-1">
+				<div className="flex items-center justify-between gap-3">
+					<span className="min-w-0 flex-1 truncate text-sm font-medium text-on-surface">{file.filename}</span>
+					<div className="-mr-1 flex shrink-0 items-center">
+						<button type="button" className="icon-btn icon-btn-sm hover:text-error" aria-label="Delete" disabled={deleting} onClick={remove}>
 							<TrashIcon />
 						</button>
 					</div>
 				</div>
-				<div className={ui.rowLine}>
+				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 					{error ? (
-						<span className={ui.statusText('error')}>{error}</span>
+						<span className="min-w-0 truncate text-xs text-error">{error}</span>
 					) : (
-						<span className={ui.statusText()}>{formatBytes(file.sizeBytes)}</span>
+						<span className="min-w-0 truncate text-xs text-on-surface-variant">{formatBytes(file.sizeBytes)}</span>
 					)}
 					{file.expiresAt && (
-						<span className={ui.statusAside}>Expires {new Date(file.expiresAt).toLocaleDateString()}</span>
+						<span className="shrink-0 text-xs text-on-surface-variant">Expires {new Date(file.expiresAt).toLocaleDateString()}</span>
 					)}
 				</div>
-				<div className={ui.linkRow}>
-					<a href={link} target="_blank" rel="noreferrer" className={ui.linkUrl}>
-						{link}
-					</a>
-					<button type="button" className={ui.smallButton} onClick={() => copyLink(link)}>
+				<a href={link} target="_blank" rel="noreferrer" className="truncate text-xs text-primary hover:underline">
+					{link}
+				</a>
+				<div className="flex flex-wrap items-center gap-1">
+					<button type="button" className="btn btn-tonal btn-sm" onClick={() => copyLink(link)}>
 						Copy
 					</button>
+					<ShareLinks link={link} />
 				</div>
 			</div>
 		</li>

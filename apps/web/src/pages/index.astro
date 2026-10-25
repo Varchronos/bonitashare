@@ -3,11 +3,13 @@ import Layout from "../layouts/Layout.astro";
 import FileUpload from "../components/upload/FileUpload";
 import { getSession } from "../lib/session";
 import { getUsage } from "../lib/usage";
+import { getFiles } from "../lib/files";
 
 // Resolve (or mint) the session up front so the upload widget already has
 // a session cookie by the time it posts.
 const { cookie } = await getSession(Astro);
-const usage = await getUsage(cookie);
+const RECENT_FILES = 4;
+const [usage, files] = await Promise.all([getUsage(cookie), getFiles(cookie, RECENT_FILES)]);
 
 const features = [
 	{
@@ -29,26 +31,26 @@ const features = [
 	<div class="mx-auto w-full max-w-page px-4 py-16 max-[800px]:pt-8">
 		<section class="flex flex-col gap-8">
 			<div>
-				<h1 class="mb-4 text-[clamp(2rem,5vw,3.25rem)] leading-[1.1] font-bold tracking-[-0.02em]">
-					Share files fast <span class="text-accent">thats it.</span>
+				<h1 class="mb-4 text-display">
+					Share files fast <span class="text-primary">thats it.</span>
 				</h1>
-				<p class="mb-6 text-lg leading-relaxed text-muted">literally thats it. Quick & easy.</p>
+				<p class="mb-6 text-lg leading-relaxed text-on-surface-variant">literally thats it. Quick & easy.</p>
 				<div class="flex flex-wrap items-center gap-3">
-					<a href="/login" class="btn">Log in</a>
-					<span class="tracking-wider text-muted italic">to keep track of shared files.</span>
+					<a href="/login" class="btn btn-outlined">Log in</a>
+					<span class="text-sm text-on-surface-variant">to keep track of shared files.</span>
 				</div>
 			</div>
 			<div>
-				<FileUpload client:load usage={usage} />
+				<FileUpload client:load usage={usage} files={files} filesLimit={RECENT_FILES} />
 			</div>
 		</section>
 
 		<section class="mt-20 grid grid-cols-3 gap-4 max-[800px]:mt-12 max-[800px]:grid-cols-1">
 			{
 				features.map((f) => (
-					<article class="rounded-xl border border-border bg-surface p-5">
-						<h3 class="mb-2 font-bold">{f.title}</h3>
-						<p class="text-muted">{f.body}</p>
+					<article class="card p-6">
+						<h3 class="mb-2 text-base font-medium">{f.title}</h3>
+						<p class="text-sm leading-relaxed text-on-surface-variant">{f.body}</p>
 					</article>
 				))
 			}

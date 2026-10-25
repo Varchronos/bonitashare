@@ -6,18 +6,18 @@ function MeterRow({ label, meter, note }: { label: string; meter: Meter & { limi
 	const used = meter.committed + meter.inProgress;
 	const pct = (bytes: number) => Math.min(100, (bytes / meter.limit) * 100);
 	const committedPct = pct(meter.committed);
-	const fill = used >= meter.limit ? 'bg-danger' : 'bg-accent';
+	const fill = used >= meter.limit ? 'bg-error' : 'bg-primary';
 
 	return (
-		<div className="flex flex-col gap-1.5">
-			<div className="flex items-baseline justify-between gap-3 text-sm text-fg">
+		<div className="flex flex-col gap-2">
+			<div className="flex items-baseline justify-between gap-3 text-sm font-medium text-on-surface">
 				<span>{label}</span>
-				<span className="shrink-0 text-sm text-muted">
+				<span className="shrink-0 text-xs font-normal text-on-surface-variant">
 					{formatBytes(used)} of {formatBytes(meter.limit)}
 				</span>
 			</div>
 			<div
-				className="flex h-1.5 overflow-hidden rounded-full bg-border"
+				className="flex h-1 overflow-hidden rounded-full bg-secondary-container"
 				role="meter"
 				aria-label={label}
 				aria-valuemin={0}
@@ -29,7 +29,7 @@ function MeterRow({ label, meter, note }: { label: string; meter: Meter & { limi
 				<div className={`${fill} opacity-45 transition-[width] duration-100`} style={{ width: `${pct(used) - committedPct}%` }} />
 			</div>
 			{/* The date is formatted in the server's timezone on render and the browser's after hydration. */}
-			{note && <span className="text-xs text-muted" suppressHydrationWarning>{note}</span>}
+			{note && <span className="text-xs text-on-surface-variant" suppressHydrationWarning>{note}</span>}
 		</div>
 	);
 }
@@ -48,7 +48,7 @@ export default function UsageMeter({ initial }: { initial: Usage | null }) {
 		: null;
 
 	return (
-		<div className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-3">
+		<div className="card flex flex-col gap-4 p-4">
 			<MeterRow label="Uploaded this week" meter={{ ...weekly, limit: usage.weekly.limit }} note={freesAt} />
 			{/* Anonymous uploads have no storage limit; they're bounded by their fixed expiry instead. */}
 			{storage.limit !== null && <MeterRow label="Storage" meter={{ ...storage, limit: storage.limit }} />}
