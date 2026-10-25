@@ -23,8 +23,8 @@ const fullTitle = title ? `${title} · bonitashare` : 'bonitashare';
 	<head>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
+		<!-- In public/, not src/assets: an icon needs a fixed URL, not a hashed build one. -->
+		<link rel="icon" href="/logo.ico" sizes="32x32" />
 		<meta name="generator" content={Astro.generator} />
 		<!-- Inline and blocking so the theme is set before first paint; a bundled script would flash light. -->
 		<script is:inline>

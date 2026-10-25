@@ -49,9 +49,17 @@ const description = file
 		? "This file has expired and is no longer available."
 		: "This file doesn't exist or isn't available.";
 
-// With width/height set from the probe, h-auto keeps the video's aspect ratio before it loads.
-const mediaClass = "block h-auto max-w-full rounded-2xl";
-// A dark frame (letterboxing, a black poster) blends into the light page without an edge; dark mode needs none.
+// Capped at 75% of the screen's height so a portrait image or video fits without scrolling; it then
+// narrows to keep its shape (object-contain covers anything that doesn't match exactly) and centres.
+const MEDIA_MAX_HEIGHT = "70svh";
+const mediaClass = "mx-auto block h-auto w-auto max-h-[75svh] max-w-full rounded-2xl object-contain";
+// w-auto drops the width attribute's sizing, so before it loads a video would be a 300×150 box. With the
+// probe's dimensions, size the box to the video's shape instead: as wide as fits the height cap, never
+// past the column or the video's own width. Reserves the right space before playback starts.
+const videoBox =
+	video?.width && video?.height
+		? `aspect-ratio: ${video.width} / ${video.height}; width: min(100%, ${video.width}px, calc(${MEDIA_MAX_HEIGHT} * ${video.width} / ${video.height}));`
+		: undefined;
 const videoClass = `${mediaClass} border border-outline-variant dark:border-0`;
 ---
 
@@ -72,6 +80,7 @@ const videoClass = `${mediaClass} border border-outline-variant dark:border-0`;
 							(hlsUrl ? (
 								<video
 									class={videoClass}
+									style={videoBox}
 									data-hls-src={hlsUrl}
 									data-fallback-src={file.url}
 									poster={file.thumbnailUrl ?? undefined}
@@ -85,6 +94,7 @@ const videoClass = `${mediaClass} border border-outline-variant dark:border-0`;
 								<>
 									<video
 										class={videoClass}
+										style={videoBox}
 										src={file.url}
 										poster={file.thumbnailUrl ?? undefined}
 										controls
