@@ -4,7 +4,7 @@ import logo from '../assets/logo.png';
 const links = [
 	{ href: '/', label: 'Home' },
 	{ href: '/upload', label: 'Uploads' },
-	// { href: '/login', label: 'Login' }, // hide for now since not implemented
+	{ href: '/login', label: 'Login' },
 ];
 // On phones Uploads stays in the bar; the rest move into the menu.
 const menuLinks = links.filter(({ href }) => href !== '/upload');
@@ -46,12 +46,11 @@ const navItem =
 					</svg>
 				</button>
 			</li>
-			<!-- hide for now not implemented -->
-			<!-- <li>
+			<li>
 				<a href="/signup" class="btn btn-filled ml-2" aria-current={path === '/signup' ? 'page' : undefined}>
 					Sign up
 				</a>
-			</li> -->
+			</li>
 		</ul>
 
 		<!-- Phones: Uploads and the menu button. -->
@@ -95,9 +94,9 @@ const navItem =
 			<span class="dark:hidden">Dark mode</span>
 			<span class="hidden dark:inline">Light mode</span>
 		</button>
-		<!-- <a href="/signup" class="btn btn-filled mt-2 w-full" aria-current={path === '/signup' ? 'page' : undefined}>
+		<a href="/signup" class="btn btn-filled mt-2 w-full" aria-current={path === '/signup' ? 'page' : undefined}>
 			Sign up
-		</a> -->
+		</a>
 	</div>
 </header>
 
