@@ -10,6 +10,7 @@ catalog:
   bullmq: ^6.3.9
 
 allowBuilds:
+  argon2: true
   esbuild: true
   msgpackr-extract: true
   sharp: false

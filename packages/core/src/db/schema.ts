@@ -1,25 +1,58 @@
-import { pgTable, text, uuid, bigint, boolean, timestamp, integer, primaryKey, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, uuid, bigint, boolean, timestamp, integer, primaryKey, index, uniqueIndex, varchar, check } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
 export const users = pgTable('users', {
     id: uuid('id').primaryKey().defaultRandom(),
-    email: text('email').unique(),
+    displayName: varchar('display_name', { length: 50 }),
+    // Set only once the signup OTP is verified. Stored lowercased; the unique index below enforces that too.
+    email: text('email'),
+    // argon2id, encoded with its parameters.
+    passwordHash: text('password_hash'),
     // Anonymous isn't a plan: it's implied by a null email.
     plan: text('plan', { enum: ['free', 'pro'] }).notNull().default('free'),
     // Null for free. Pro only counts while this is in the future, so a missed payment webhook can't leave it on forever.
     planExpiresAt: timestamp('plan_expires_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index('users_with_email_idx').on(table.email).where(sql`${table.email} IS NOT NULL`)]);
+}, (table) => [
+    check('users_email_requires_password_hash', sql`${table.email} IS NULL OR ${table.passwordHash} IS NOT NULL`),
+    // Case-insensitive, so A@x.com and a@x.com can't be two accounts. Partial: anonymous users have no email.
+    uniqueIndex('users_email_lower_idx').on(sql`lower(${table.email})`).where(sql`${table.email} IS NOT NULL`),
+]);
 
 export const userSessions = pgTable('user_sessions', {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
     tokenHash: text('token_hash').notNull().unique(),
     userAgent: text('user_agent'),
+    // Parsed from userAgent when the session is issued, for the list of signed-in devices. Null when it can't tell.
+    deviceType: text('device_type', { enum: ['mobile', 'tablet', 'desktop'] }),
     ipAddress: text('ip_address'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// One-time codes sent by email. At most one live code per (email, purpose): a resend replaces the row,
+// so its old code stops working and createdAt doubles as the resend cooldown's clock.
+export const emailOtps = pgTable('email_otps', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    // Where the code was sent, lowercased. For change_email that's the new address.
+    email: text('email').notNull(),
+    purpose: text('purpose', { enum: ['signup', 'reset_password', 'change_email'] }).notNull(),
+    // The user the code acts on: for signup, the anonymous user to upgrade, so only the browser that asked can claim it.
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    // SHA-256 of the code; never the code itself.
+    codeHash: text('code_hash').notNull(),
+    // Wrong guesses so far. A 6-digit code is only a million options, so the code dies after a few.
+    attempts: integer('attempts').notNull().default(0),
+    // Signup only: what gets copied onto the user once the code is verified, so an unverified email never lands in users.
+    passwordHash: text('password_hash'),
+    displayName: varchar('display_name', { length: 50 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, (table) => [
+    uniqueIndex('email_otps_email_purpose_idx').on(table.email, table.purpose),
+    check('email_otps_signup_has_password', sql`${table.purpose} <> 'signup' OR ${table.passwordHash} IS NOT NULL`),
+]);
 
 export const files = pgTable('files', {
     id: text('id').primaryKey(), // short random link id, generated in app code
