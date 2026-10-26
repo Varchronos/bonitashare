@@ -11,6 +11,8 @@ export type FileLink = {
 	filename: string;
 	contentType: string | null;
 	sizeBytes: number;
+	// Whether the viewer uploaded it; only other people's files go in the recently-viewed list.
+	isOwner: boolean;
 };
 
 export type FileVideo = {

@@ -18,6 +18,8 @@ type FileLink = {
     filename: string;
     contentType: string | null;
     sizeBytes: number;
+    // Whether the viewer uploaded it. The share page keeps a recently-viewed list of other people's files.
+    isOwner: boolean;
 };
 
 type FileVideo = {
@@ -93,6 +95,7 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
                 filename: file.filename,
                 contentType: file.contentType,
                 sizeBytes: file.sizeBytes,
+                isOwner: req.userId !== null && file.ownerId === req.userId,
             },
             error: null,
         };

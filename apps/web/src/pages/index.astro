@@ -1,6 +1,7 @@
 ---
 import Layout from "../layouts/Layout.astro";
 import FileUpload from "../components/upload/FileUpload";
+import RecentlyViewed from "../components/RecentlyViewed";
 import { getSession } from "../lib/session";
 import { getUsage } from "../lib/usage";
 import { getFiles } from "../lib/files";
@@ -43,6 +44,8 @@ const features = [
 			</div>
 			<div>
 				<FileUpload client:load usage={usage} files={files} filesLimit={RECENT_FILES} />
+				<!-- Lives in this browser's IndexedDB, so there's nothing to render on the server. -->
+				<RecentlyViewed client:only="react" />
 			</div>
 		</section>
 

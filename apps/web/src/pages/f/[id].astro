@@ -61,6 +61,19 @@ const videoBox =
 		? `aspect-ratio: ${video.width} / ${video.height}; width: min(100%, ${video.width}px, calc(${MEDIA_MAX_HEIGHT} * ${video.width} / ${video.height}));`
 		: undefined;
 const videoClass = `${mediaClass} border border-outline-variant dark:border-0`;
+
+// For the homepage's recently-viewed list (lib/recent-visits.ts): other people's files are recorded,
+// your own aren't (they're under your uploads), and a link that no longer works is dropped from it.
+const visit =
+	file && !file.isOwner
+		? {
+				id: id!,
+				filename: file.filename,
+				contentType: file.contentType,
+				sizeBytes: file.sizeBytes,
+				thumbnailUrl: file.thumbnailUrl,
+			}
+		: null;
 ---
 
 <Layout title={file?.filename ?? "File not found"} description={description} ogImage={ogImage} ogVideo={ogVideo}>
@@ -140,9 +153,17 @@ const videoClass = `${mediaClass} border border-outline-variant dark:border-0`;
 			)
 		}
 	</section>
+	<div id="recent-visit" hidden data-visit={visit ? JSON.stringify(visit) : undefined} data-gone={file ? undefined : id} />
 </Layout>
 
 <script>
+	import { recordVisit, removeVisit } from "../../lib/recent-visits";
+
+	const recent = document.getElementById("recent-visit")?.dataset;
+	// Not awaited: the player below shouldn't wait on IndexedDB, and failing (private window) is fine.
+	if (recent?.visit) recordVisit(JSON.parse(recent.visit)).catch(() => {});
+	else if (recent?.gone) removeVisit(recent.gone).catch(() => {});
+
 	const player = document.querySelector<HTMLVideoElement>("video[data-hls-src]");
 
 	if (player) {
