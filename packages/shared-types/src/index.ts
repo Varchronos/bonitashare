@@ -74,5 +74,20 @@ export type DeletedFile = {
   purgeAfter: string
 }
 
+// POST /auth/signup and /auth/signup/resend: a code is on its way to `email`.
+export type OtpSent = {
+  email: string
+  expiresAt: string
+  // The earliest a resend is accepted.
+  resendAfter: string
+}
+
+// POST /auth/signup/verify: the browser's user now has this account, under a new session cookie.
+export type SignedUp = {
+  userId: string
+  email: string
+  displayName: string | null
+}
+
 export * from './tiers.js'
 export * from './utils/byte-conversion.js'

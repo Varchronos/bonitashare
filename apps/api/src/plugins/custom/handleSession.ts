@@ -5,6 +5,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest, onRequestHookHan
 import fp from "fastify-plugin";
 import type { ApiFailure } from "@bonitashare/shared-types";
 import { gen32Token, hashToken } from "@/utils/crypto.js";
+import { deviceTypeOf } from "@/utils/device.js";
 
 declare module "fastify" {
     interface FastifyRequest {
@@ -47,9 +48,10 @@ export function isActive(session: Session) {
     return session.expiresAt > new Date();
 }
 
-// Issues a fresh session token. With `existing`, it's a renewal: the old
-// (expired) session row is replaced and the same user is kept. Without it,
-// a new anonymous user is created. Only /session should call this.
+// Issues a fresh session token. With `existing`, the old session row is
+// replaced and the same user is kept: /session uses that to renew an expired
+// one, and signup to rotate the token once the account is verified. Without
+// it, a new anonymous user is created, which only /session should do.
 export async function issueSession(req: FastifyRequest, rep: FastifyReply, existing: Session | null): Promise<string> {
     const rawToken = gen32Token();
 
@@ -67,6 +69,7 @@ export async function issueSession(req: FastifyRequest, rep: FastifyReply, exist
             userId,
             tokenHash: hashToken(rawToken),
             userAgent: req.headers["user-agent"] ?? null,
+            deviceType: deviceTypeOf(req.headers["user-agent"]),
             ipAddress: req.ip,
             expiresAt: new Date(Date.now() + SESSION_TTL_MS),
         });

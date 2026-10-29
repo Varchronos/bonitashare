@@ -25,7 +25,7 @@ export const userSessions = pgTable('user_sessions', {
     tokenHash: text('token_hash').notNull().unique(),
     userAgent: text('user_agent'),
     // Parsed from userAgent when the session is issued, for the list of signed-in devices. Null when it can't tell.
-    deviceType: text('device_type', { enum: ['mobile', 'tablet', 'desktop'] }),
+    deviceType: text('device_type'),
     ipAddress: text('ip_address'),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
