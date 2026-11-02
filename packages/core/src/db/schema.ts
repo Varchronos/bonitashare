@@ -118,6 +118,24 @@ export const albums = pgTable('albums', {
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+// Other people's files and albums a signed-in user has opened, for the homepage's "Shared with you".
+// Signed-in users only: anonymous visits stay in the browser's IndexedDB and come up here at signup.
+// Each row is one artifact, a file or an album, as a foreign key of its own so deletes cascade.
+export const artifactVisits = pgTable('artifact_visits', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+    fileId: text('file_id').references(() => files.id, { onDelete: 'cascade' }),
+    albumId: text('album_id').references(() => albums.id, { onDelete: 'cascade' }),
+    // Bumped on every revisit, so one row per artifact and the newest is first.
+    visitedAt: timestamp('visited_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+    check('artifact_visits_one_artifact', sql`num_nonnulls(${table.fileId}, ${table.albumId}) = 1`),
+    uniqueIndex('artifact_visits_user_file_idx').on(table.userId, table.fileId).where(sql`${table.fileId} IS NOT NULL`),
+    uniqueIndex('artifact_visits_user_album_idx').on(table.userId, table.albumId).where(sql`${table.albumId} IS NOT NULL`),
+    // Backs the newest-first list and the trim to the newest few.
+    index('artifact_visits_user_visited_idx').on(table.userId, table.visitedAt.desc()),
+]);
+
 // join table modeling many-to-many relationship between albums and files
 // one album has many files and one file can be in many albums.
 export const albumFiles = pgTable('album_files', {

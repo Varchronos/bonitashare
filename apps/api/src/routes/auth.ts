@@ -1,4 +1,4 @@
-import { TIER_LIMITS, type ApiFailure, type ApiResponse, type LoggedIn, type OtpSent, type SignedUp } from "@bonitashare/shared-types";
+import { MAX_VISITS, TIER_LIMITS, type ApiFailure, type ApiResponse, type LoggedIn, type OtpSent, type SignedUp } from "@bonitashare/shared-types";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { and, eq, isNotNull, lt, sql } from "drizzle-orm";
 import { findSession, issueSession, stashAnonymousSession } from "@/plugins/custom/handleSession.js";
@@ -9,6 +9,7 @@ import { hashPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, verifyNothing, 
 import { sendEmail } from "@/email/client.js";
 import { signupCodeEmail } from "@/email/templates.js";
 import { hashToken } from "@/utils/crypto.js";
+import { recordFileVisits } from "@/visits/record.js";
 
 type SignupBody = { email?: unknown; password?: unknown; displayName?: unknown };
 
@@ -124,12 +125,14 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     });
 
     // Served at /api/v1/auth/signup/verify: step two. A right code upgrades this browser's anonymous
-    // user in place — same user_id, so its files, usage and visits stay — and rotates the session token.
-    fastify.post<{ Body: { email?: unknown; code?: unknown } }>("/auth/signup/verify", async (req, reply): Promise<ApiResponse<SignedUp>> => {
+    // user in place — same user_id, so its files and usage stay — and rotates the session token. The
+    // browser sends its recently viewed list along (`visits`, from IndexedDB) to move onto the account.
+    fastify.post<{ Body: { email?: unknown; code?: unknown; visits?: unknown } }>("/auth/signup/verify", async (req, reply): Promise<ApiResponse<SignedUp>> => {
         const userId = req.userId!;
         const email = normalizeEmail(req.body?.email);
         const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
         if (!email || !/^\d{6}$/.test(code)) return fail(reply, 400, "OTP_INVALID", "That code isn't right");
+        const visits = parseVisits(req.body?.visits);
 
         type Outcome =
             | { ok: true; displayName: string | null }
@@ -185,6 +188,8 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
                                 : sql`GREATEST(${files.expiresAt}, ${files.createdAt} + make_interval(secs => ${freeMax}))`,
                     })
                     .where(and(eq(files.ownerId, userId), isNotNull(files.expiresAt)));
+
+                await recordFileVisits(userId, visits, tx);
 
                 // This signup and any other this user started with a different email are done.
                 await tx.delete(emailOtps).where(and(eq(emailOtps.userId, userId), eq(emailOtps.purpose, "signup")));
@@ -266,4 +271,20 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default authRoutes;
 
-
+// The browser's recently viewed list, as sent with signup verify: [{ kind, id, visitedAt (ms) }]. Bad
+// entries, and kinds not recorded yet (albums), are dropped rather than failing the signup over a
+// convenience list; a time in the future is pulled back to now.
+function parseVisits(value: unknown): { fileId: string; visitedAt: Date }[] {
+    if (!Array.isArray(value)) return [];
+    const now = Date.now();
+    const visits: { fileId: string; visitedAt: Date }[] = [];
+    for (const v of value.slice(0, MAX_VISITS)) {
+        const fileId = v?.id;
+        const visitedAt = v?.visitedAt;
+        if (v?.kind !== "file") continue;
+        if (typeof fileId !== "string" || !fileId || fileId.length > 64) continue;
+        if (typeof visitedAt !== "number" || !Number.isFinite(visitedAt) || visitedAt <= 0) continue;
+        visits.push({ fileId, visitedAt: new Date(Math.min(visitedAt, now)) });
+    }
+    return visits;
+}

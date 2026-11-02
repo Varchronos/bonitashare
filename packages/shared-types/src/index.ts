@@ -74,6 +74,24 @@ export type DeletedFile = {
   purgeAfter: string
 }
 
+// GET /visits: an artifact (another user's file or album) a signed-in user has opened, newest first.
+// Anonymous users keep the same list in IndexedDB instead (apps/web/src/lib/recent-visits.ts).
+// Only files for now: albums join this union once they have pages to visit.
+export type ArtifactKind = 'file' | 'album'
+
+export type Visit = {
+  kind: 'file'
+  id: string
+  filename: string
+  contentType: string | null
+  sizeBytes: number
+  thumbnailUrl: string | null
+  visitedAt: string
+}
+
+// The most visits kept per user, on the server and in IndexedDB alike.
+export const MAX_VISITS = 24
+
 // POST /auth/signup and /auth/signup/resend: a code is on its way to `email`.
 export type OtpSent = {
   email: string

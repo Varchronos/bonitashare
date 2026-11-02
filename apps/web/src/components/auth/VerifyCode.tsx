@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import type { ApiResponse, OtpSent, SignedUp } from '@bonitashare/shared-types';
 import { clearPendingSignup, loadPendingSignup, savePendingSignup } from '../../lib/pending-signup';
+import { clearVisits, toSignupVisits } from '../../lib/recent-visits';
 import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 // Codes after which there's nothing left to retry: the signup has to start over from /signup.
@@ -45,9 +46,12 @@ export default function VerifyCode() {
 	const [now, setNow] = useState(() => Date.now());
 
 	const verify = useAsyncAction<SignedUp, AuthError, { email: string; code: string }>({
-		triggerFn: (body) => post('signup/verify', body),
-		onSuccess: () => {
+		// The anonymous "Shared with you" list goes along, to move onto the account in the same step.
+		triggerFn: async (body) => post('signup/verify', { ...body, visits: await toSignupVisits() }),
+		onSuccess: async () => {
 			clearPendingSignup();
+			// It's on the account now, and signed-in visits are kept there.
+			await clearVisits().catch(() => {});
 			location.assign('/account');
 		},
 		onError: (err) => {
