@@ -89,5 +89,16 @@ export type SignedUp = {
   displayName: string | null
 }
 
+// POST /auth/login: the browser now has a session for this account.
+export type LoggedIn = SignedUp
+
+// GET /account: the browser's user. email is null while it's still anonymous.
+export type Account = {
+  userId: string
+  email: string | null
+  displayName: string | null
+  tier: import('./tiers.js').Tier
+}
+
 export * from './tiers.js'
 export * from './utils/byte-conversion.js'

@@ -12,3 +12,16 @@ export const GET: APIRoute = async ({ request }) => {
 
 	return new Response(res.body, { status: res.status, headers });
 };
+
+// Logout: ends the session on the API and passes on the cookie it clears.
+export const DELETE: APIRoute = async ({ request }) => {
+	const res = await fetch(`${process.env.API_INTERNAL_URL}/api/v1/session`, {
+		method: 'DELETE',
+		headers: { cookie: request.headers.get('cookie') ?? '' },
+	});
+
+	const headers = new Headers({ 'content-type': 'application/json' });
+	for (const cookie of res.headers.getSetCookie()) headers.append('set-cookie', cookie);
+
+	return new Response(res.body, { status: res.status, headers });
+};

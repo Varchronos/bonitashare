@@ -1,11 +1,11 @@
-import { TIER_LIMITS, type ApiFailure, type ApiResponse, type OtpSent, type SignedUp } from "@bonitashare/shared-types";
+import { TIER_LIMITS, type ApiFailure, type ApiResponse, type LoggedIn, type OtpSent, type SignedUp } from "@bonitashare/shared-types";
 import type { FastifyPluginAsync, FastifyReply } from "fastify";
 import { and, eq, isNotNull, lt, sql } from "drizzle-orm";
-import { findSession, issueSession } from "@/plugins/custom/handleSession.js";
+import { findSession, issueSession, stashAnonymousSession } from "@/plugins/custom/handleSession.js";
 import { db } from "@/db/client.js";
 import { emailOtps, files, users } from "@bonitashare/core/db";
 import { genOtp, otpMatches, OTP_MAX_ATTEMPTS, OTP_RESEND_COOLDOWN_MS, OTP_TTL_MS } from "@/auth/otp.js";
-import { hashPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH } from "@/auth/password.js";
+import { hashPassword, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, verifyNothing, verifyPassword } from "@/auth/password.js";
 import { sendEmail } from "@/email/client.js";
 import { signupCodeEmail } from "@/email/templates.js";
 import { hashToken } from "@/utils/crypto.js";
@@ -202,6 +202,33 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         await issueSession(req, reply, await findSession(req));
 
         return { data: { userId, email, displayName: outcome.displayName }, error: null };
+    });
+
+    // Served at /api/v1/auth/login: swaps this browser's anonymous session for one on the account.
+    // The anonymous user and its files are left as they were, its session put aside for logout to
+    // restore (see stashAnonymousSession).
+    fastify.post<{ Body: { email?: unknown; password?: unknown } }>("/auth/login", async (req, reply): Promise<ApiResponse<LoggedIn>> => {
+        const userId = req.userId!;
+        const email = normalizeEmail(req.body?.email);
+        const password = req.body?.password;
+        // One answer for every way it can be wrong, so the form can't be used to find out who has an account.
+        const invalid = () => fail(reply, 401, "INVALID_CREDENTIALS", "Email or password is incorrect");
+        if (!email || typeof password !== "string" || !password || password.length > PASSWORD_MAX_LENGTH) return invalid();
+
+        const [me] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
+        if (me?.email) return fail(reply, 409, "ALREADY_SIGNED_IN", "You're already signed in to an account");
+
+        const [account] = await db
+            .select({ id: users.id, email: users.email, passwordHash: users.passwordHash, displayName: users.displayName })
+            .from(users)
+            .where(sql`lower(${users.email}) = ${email}`);
+        const ok = account?.passwordHash ? await verifyPassword(account.passwordHash, password) : await verifyNothing(password);
+        if (!account || !ok) return invalid();
+
+        stashAnonymousSession(req, reply);
+        await issueSession(req, reply, null, account.id);
+
+        return { data: { userId: account.id, email: account.email!, displayName: account.displayName }, error: null };
     });
 };
 

@@ -1,11 +1,17 @@
 ---
 import logo from '../assets/logo.png';
+import { currentAccount } from '../lib/account';
+
+// Signed in means an account with an email; an anonymous session still gets Login and Sign up.
+const signedIn = Boolean((await currentAccount(Astro))?.email);
 
 const links = [
 	{ href: '/', label: 'Home' },
 	{ href: '/upload', label: 'Uploads' },
-	{ href: '/login', label: 'Login' },
+	...(signedIn ? [] : [{ href: '/login', label: 'Login' }]),
 ];
+// The filled button at the end of the bar (and the menu): Sign up, or Account once signed in.
+const cta = signedIn ? { href: '/account', label: 'Account' } : { href: '/signup', label: 'Sign up' };
 // On phones Uploads stays in the bar; the rest move into the menu.
 const menuLinks = links.filter(({ href }) => href !== '/upload');
 
@@ -47,8 +53,8 @@ const navItem =
 				</button>
 			</li>
 			<li>
-				<a href="/signup" class="btn btn-filled ml-2" aria-current={path === '/signup' ? 'page' : undefined}>
-					Sign up
+				<a href={cta.href} class="btn btn-filled ml-2" aria-current={path === cta.href ? 'page' : undefined}>
+					{cta.label}
 				</a>
 			</li>
 		</ul>
@@ -94,8 +100,8 @@ const navItem =
 			<span class="dark:hidden">Dark mode</span>
 			<span class="hidden dark:inline">Light mode</span>
 		</button>
-		<a href="/signup" class="btn btn-filled mt-2 w-full" aria-current={path === '/signup' ? 'page' : undefined}>
-			Sign up
+		<a href={cta.href} class="btn btn-filled mt-2 w-full" aria-current={path === cta.href ? 'page' : undefined}>
+			{cta.label}
 		</a>
 	</div>
 </header>

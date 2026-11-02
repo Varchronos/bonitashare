@@ -1,6 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AuthForm from '../components/AuthForm.astro';
+import { getSession } from '../lib/session';
+import { currentAccount } from '../lib/account';
+
+// The auth API needs a session (signup upgrades this browser's anonymous user), so make sure there is one.
+await getSession(Astro);
+const account = await currentAccount(Astro);
+if (account?.email) return Astro.redirect('/account');
 ---
 
 <Layout title="Sign up" description="Create a bonitashare account for bigger uploads, more storage and files that last longer.">

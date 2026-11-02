@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { formatBytes, type DeletedFile } from '@bonitashare/shared-types';
 import { restoreFile } from '../../lib/files';
 import FileThumb from './FileThumb';
 import { RestoreIcon } from './icons';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 // The recently deleted page's list. Rendered from the server's list once; a restore only changes the
 // row it was clicked on, so nothing here refetches.
@@ -20,23 +20,11 @@ export default function DeletedFiles({ files }: { files: DeletedFile[] | null })
 }
 
 function DeletedRow({ file }: { file: DeletedFile }) {
-	const [restoring, setRestoring] = useState(false);
-	const [restored, setRestored] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	const restore = useAsyncAction({ triggerFn: () => restoreFile(file.id) });
+	const restoring = restore.isPending;
+	const restored = restore.isSuccess;
+	const error = restore.error?.message ?? null;
 	const isVideo = file.contentType?.startsWith('video/') ?? false;
-
-	async function restore() {
-		setRestoring(true);
-		setError(null);
-		try {
-			await restoreFile(file.id);
-			setRestored(true);
-		} catch (err) {
-			setError((err as Error).message);
-		} finally {
-			setRestoring(false);
-		}
-	}
 
 	return (
 		<li className="card flex min-w-0 flex-col p-2 transition-colors hover:bg-surface-container-high">
@@ -63,7 +51,7 @@ function DeletedRow({ file }: { file: DeletedFile }) {
 						type="button"
 						className="btn mt-auto w-full bg-success-container text-on-success-container not-disabled:hover:shadow-sm disabled:cursor-progress disabled:opacity-70"
 						disabled={restoring}
-						onClick={restore}
+						onClick={() => restore.trigger()}
 					>
 						<RestoreIcon className={restoring ? 'animate-spin [animation-direction:reverse]' : undefined} />
 						{restoring ? 'Restoring…' : 'Restore'}

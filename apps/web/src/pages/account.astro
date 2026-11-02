@@ -1,0 +1,42 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getSession } from '../lib/session';
+import { currentAccount } from '../lib/account';
+
+// Placeholder until there's account settings to show. Anonymous visitors have no account to see.
+await getSession(Astro);
+const account = await currentAccount(Astro);
+if (!account?.email) return Astro.redirect('/signup');
+---
+
+<Layout title="Account" description="Your bonitashare account.">
+	<section class="mx-auto w-full max-w-page px-4 py-16 max-[800px]:pt-8">
+		<h1 class="mb-2 text-headline">{account.displayName ? `Hi, ${account.displayName}` : 'Your account'}</h1>
+		<p class="mb-8 text-on-surface-variant">Signed in as <span class="font-medium text-on-surface">{account.email}</span>.</p>
+		<div class="flex flex-wrap items-center gap-3">
+			<a class="btn btn-filled" href="/upload">Go to uploads</a>
+			<button type="button" class="btn btn-outlined" data-logout>Log out</button>
+		</div>
+		<p data-logout-error role="alert" class="mt-4 text-sm text-error empty:hidden"></p>
+	</section>
+</Layout>
+
+<script>
+	const button = document.querySelector<HTMLButtonElement>('[data-logout]');
+	const errorEl = document.querySelector<HTMLElement>('[data-logout-error]');
+
+	button?.addEventListener('click', async () => {
+		if (!errorEl) return;
+		errorEl.textContent = '';
+		button.disabled = true;
+		try {
+			const res = await fetch('/api/v1/session', { method: 'DELETE' });
+			if (!res.ok) throw new Error();
+			// The cookie is gone; the home page starts this browser on a fresh anonymous session.
+			location.assign('/');
+		} catch {
+			errorEl.textContent = "Couldn't log out. Try again.";
+			button.disabled = false;
+		}
+	});
+</script>
