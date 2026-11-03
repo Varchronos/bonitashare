@@ -1,0 +1,276 @@
+---
+import Layout from "../layouts/Layout.astro";
+import PlanFeatures from "../components/PlanFeatures";
+import { currentAccount } from "../lib/account";
+import { TIER_LIMITS, formatBytes } from "@bonitashare/shared-types";
+
+// The tabs open on the visitor's own plan. Only looked up if they have a session (see currentAccount).
+const account = await currentAccount(Astro);
+const signedIn = Boolean(account?.email);
+
+// What signing up adds over a guest, from TIER_LIMITS so the numbers are the ones the server enforces.
+const guest = TIER_LIMITS.anonymous;
+const free = TIER_LIMITS.free;
+const DAY = 24 * 60 * 60;
+// What can't be shared. Plain-language rules, not the full terms of service.
+const banned = [
+	{
+		title: "Child sexual abuse material",
+		body: "Zero tolerance. Any sexual content involving minors, real or generated, is removed, the account and everything it uploaded is deleted, and it's reported to law enforcement.",
+	},
+	{
+		title: "Gore and violent content",
+		body: "Real footage or images of killing, torture, serious injury or cruelty to people or animals, shared to shock or glorify.",
+	},
+	{
+		title: "Abuse and harassment",
+		body: "Intimate images shared without consent, content meant to threaten, bully or expose someone, and anything promoting terrorism or hate.",
+	},
+	{
+		title: "Malware and illegal content",
+		body: "Viruses, phishing kits and other harmful software, and anything else that's illegal to share where you or the recipient are.",
+	},
+];
+
+// Open-source password managers, recommended in the Google sign-in section.
+const passwordManagers = [
+	{ name: "Bitwarden", href: "https://bitwarden.com", note: "syncs across devices" },
+	{ name: "Proton Pass", href: "https://proton.me/pass", note: "syncs across devices" },
+	{ name: "KeePassXC", href: "https://keepassxc.org", note: "offline, on your computer" },
+];
+
+const signupPerks = [
+	`Bigger files: up to ${formatBytes(free.maxFileBytes)} each, instead of ${formatBytes(guest.maxFileBytes)}`,
+	`${formatBytes(free.weeklyUploadBytes)} of uploads a week, instead of ${formatBytes(guest.weeklyUploadBytes)}`,
+	`Choose when your files expire, up to ${Math.round(free.maxExpirySeconds / DAY)} days`,
+	`Videos converted to stream at ${free.videoRenditions.map((r) => `${r}p`).join(", ")}`,
+	'Your files and "Shared with you" on every device you sign in on',
+];
+---
+
+<Layout
+	title="About"
+	description="What bonitashare is: drop a file in, get a link, share it with anyone. No install, no account needed."
+>
+	<!-- Sections split by a dotted rule, with the same space above and below it. -->
+	<div
+		class="mx-auto flex w-full max-w-page flex-col divide-y-2 divide-dotted divide-outline-variant px-4 py-16 max-[800px]:pt-8"
+	>
+		<section class="pb-16 max-[800px]:pb-12">
+			<div class="max-w-2xl">
+				<h1 class="mb-4 text-display">
+					About <span class="text-primary">bonitashare</span>
+				</h1>
+				<p class="text-lg leading-relaxed text-on-surface-variant">
+					bonitashare is the quickest way to get a file from you to
+					someone else. Drop it in, get a link, send the link. That's
+					the whole idea: no install, no sign-up wall, no hoops for
+					the person on the other end.
+				</p>
+			</div>
+		</section>
+
+		<section class="py-16 max-[800px]:py-12">
+			<h2 class="mb-6 text-headline">What you get</h2>
+			<PlanFeatures client:visible initial={account?.tier} />
+		</section>
+
+		<section class="py-16 max-[800px]:py-12">
+			<h2 class="mb-2 text-headline">
+				But bonita, why sign up if file sharing is free?
+			</h2>
+			<p class="mb-6 max-w-2xl text-on-surface-variant">
+				Sharing is free, and you never need an account to send a file.
+				An account is for when you share often, or share big things.
+			</p>
+			<div class="grid grid-cols-2 gap-4 max-[800px]:grid-cols-1">
+				<article class="card flex flex-col gap-3 p-6">
+					<h3 class="text-base font-medium">
+						What an account gets you
+					</h3>
+					<ul
+						class="flex flex-col gap-2 text-sm leading-relaxed text-on-surface-variant"
+					>
+						{
+							signupPerks.map((perk) => (
+								<li class="flex items-start gap-2">
+									<span
+										aria-hidden="true"
+										class="mt-2 size-1.5 shrink-0 rounded-full bg-primary"
+									/>
+									{perk}
+								</li>
+							))
+						}
+					</ul>
+				</article>
+				<article class="card flex flex-col gap-3 p-6">
+					<h3 class="text-base font-medium">Why we ask</h3>
+					<p class="text-sm leading-relaxed text-on-surface-variant">
+						Open, anonymous uploads are what bots go for: scripted
+						floods of spam, malware or plain junk. That's why guests
+						get modest limits and files that expire on their own, so
+						there's little for a bot to gain.
+					</p>
+					<p class="text-sm leading-relaxed text-on-surface-variant">
+						More room, longer-lasting files and video conversion
+						cost real storage and computing power. Before handing
+						those out, we check there's a person behind the account:
+						a quick bot check when you sign up and a code sent to
+						your email. One verified email, one account. That's what
+						keeps bonitashare fast and free for everyone.
+					</p>
+				</article>
+			</div>
+			<div
+				class="mt-4 flex items-start gap-3 rounded-xl bg-secondary-container p-6 text-on-secondary-container"
+			>
+				<p class="text-sm leading-relaxed">
+					<span class="font-medium"
+						>bonitashare is by no means a file storage platform.</span
+					> It's for getting a file from you to someone else, not for keeping
+					it. Files have limits and expiry dates, so always keep your own
+					copy of anything that matters.
+				</p>
+			</div>
+			{
+				!signedIn && (
+					<div class="mt-6 flex flex-wrap items-center gap-3">
+						<a href="/signup" class="btn btn-filled">
+							Sign up
+						</a>
+						<a href="/login" class="btn btn-text">
+							I already have an account
+						</a>
+					</div>
+				)
+			}
+		</section>
+
+		<section class="py-16 max-[800px]:py-12">
+			<h2 class="mb-2 text-headline">What you can't share</h2>
+			<p class="mb-6 max-w-2xl text-on-surface-variant">
+				Uploading a file means agreeing to our terms of service. Most of
+				it comes down to one rule: don't use bonitashare to hurt people.
+				These are never allowed, whether you're a guest or signed in.
+			</p>
+			<div class="grid grid-cols-2 gap-4 max-[800px]:grid-cols-1">
+				{
+					banned.map((rule) => (
+						<article class="card p-6">
+							<h3 class="mb-2 text-base font-medium">
+								{rule.title}
+							</h3>
+							<p class="text-sm leading-relaxed text-on-surface-variant">
+								{rule.body}
+							</p>
+						</article>
+					))
+				}
+			</div>
+			<div
+				class="mt-4 rounded-xl bg-error-container p-6 text-on-error-container"
+			>
+				<h3 class="mb-2 text-base font-medium">
+					What happens if you break the rules
+				</h3>
+				<p class="text-sm leading-relaxed">
+					Files that break these rules are taken down without notice,
+					and their links stop working. Depending on how serious it
+					is, the account behind them is suspended or deleted, along
+					with everything it uploaded. Illegal content, and child
+					sexual abuse material above all, is reported to the
+					authorities with the details we hold about the upload.
+				</p>
+			</div>
+			<div class="mt-8 max-w-2xl">
+				<h3 class="mb-2 text-base font-medium">
+					But bonita, can I share movies, shows and spicy content?
+				</h3>
+				<p class="mb-3 text-sm leading-relaxed text-on-surface-variant">
+					Movies, shows, music, games and anything else you don't own
+					the rights to: please don't. When a rights holder sends us a
+					takedown notice, the file comes down and its link stops
+					working. Accounts that keep doing it get deleted.
+				</p>
+				<p class="text-sm leading-relaxed text-on-surface-variant">
+					Spicy content is only okay if it's legal, everyone in it is
+					an adult who agreed to it, and you're sending it to someone
+					who wants it. Anything that breaks the rules above comes
+					down. Play safe.
+				</p>
+			</div>
+		</section>
+
+		<section class="py-16 max-[800px]:py-12">
+			<h2 class="mb-2 text-headline">Why no Google sign-in, bonita?</h2>
+			<p class="mb-6 max-w-2xl text-on-surface-variant">
+				You sign up with any email address and a password, and confirm
+				it with a code we email you. On purpose.
+			</p>
+			<div class="grid grid-cols-2 gap-4 max-[800px]:grid-cols-1">
+				<article class="card p-6">
+					<h3 class="mb-2 text-base font-medium">
+						Google isn't the only email provider
+					</h3>
+					<p class="text-sm leading-relaxed text-on-surface-variant">
+						Proton, Outlook, iCloud, your work address or your own
+						domain all work the same here. Plenty of people pick
+						their provider for security and privacy, and they
+						shouldn't have to give that up to use a file sharing
+						site. Plus I am in no mood to handle both email and
+						gmail signups. It also means your account here doesn't
+						hang off one Google login: if that gets locked or taken
+						over, this account isn't taken with it.
+					</p>
+				</article>
+				<article class="card p-6">
+					<h3 class="mb-2 text-base font-medium">
+						Google doesn't need to know you're here
+					</h3>
+					<p class="text-sm leading-relaxed text-on-surface-variant">
+						Signing in with Google tells Google every time you log
+						in to a site, which adds to the picture it builds of
+						your interests. What you share and when is none of its
+						business, so we keep it out of the loop.
+					</p>
+				</article>
+			</div>
+			<div class="mt-4 flex flex-col gap-3 rounded-xl bg-secondary-container p-6 text-on-secondary-container">
+				<h3 class="text-base font-medium">Use a password manager</h3>
+				<p class="text-sm leading-relaxed">
+					An email and password only stay safe if the password is long, random and used nowhere else. Nobody can
+					remember that for every site, so let a password manager do it: it makes a strong password for each site,
+					remembers it, and fills it in for you. These are open source, so you can check how they keep your passwords:
+				</p>
+				<ul class="flex flex-wrap gap-2">
+					{
+						passwordManagers.map((pm) => (
+							<li>
+								<a
+									href={pm.href}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="btn btn-sm bg-surface text-on-surface"
+								>
+									{pm.name}
+									<span class="font-normal text-on-surface-variant">· {pm.note}</span>
+								</a>
+							</li>
+						))
+					}
+				</ul>
+			</div>
+		</section>
+
+		<section
+			class="flex flex-col items-start gap-4 pt-16 max-[800px]:pt-12"
+		>
+			<h2 class="text-headline">Try it</h2>
+			<p class="text-on-surface-variant">
+				The fastest way to see what it does is to share something.
+			</p>
+			<a href="/" class="btn btn-filled">Share a file</a>
+		</section>
+	</div>
+</Layout>

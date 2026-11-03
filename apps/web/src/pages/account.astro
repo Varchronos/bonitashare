@@ -1,0 +1,27 @@
+---
+import Layout from '../layouts/Layout.astro';
+import { getSession } from '../lib/session';
+import { currentAccount } from '../lib/account';
+import DeleteAccount from '../components/DeleteAccount';
+import LogoutButton from '../components/LogoutButton';
+
+// Placeholder until there's account settings to show. Anonymous visitors have no account to see.
+await getSession(Astro);
+const account = await currentAccount(Astro);
+if (!account?.email) return Astro.redirect('/signup');
+---
+
+<Layout title="Account" description="Your bonitashare account.">
+	<!-- At least the screen below the navbar (h-16), so the delete section can sit at the bottom. -->
+	<section class="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-page flex-col px-4 py-16 max-[800px]:pt-8">
+		<h1 class="mb-2 text-headline">{account.displayName ? `Hi, ${account.displayName}` : 'Your account'}</h1>
+		<p class="mb-8 text-on-surface-variant">Signed in as <span class="font-medium text-on-surface">{account.email}</span>.</p>
+		<div class="flex flex-wrap items-center gap-3">
+			<a class="btn btn-filled" href="/upload">Go to uploads</a>
+			<LogoutButton client:load />
+		</div>
+		<div class="mt-auto pt-16">
+			<DeleteAccount client:visible />
+		</div>
+	</section>
+</Layout>

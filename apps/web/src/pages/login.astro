@@ -1,6 +1,13 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import AuthForm from '../components/AuthForm.astro';
+import { getSession } from '../lib/session';
+import { currentAccount } from '../lib/account';
+
+// Login swaps this browser's session for the account's, so make sure there is one to swap.
+await getSession(Astro);
+const account = await currentAccount(Astro);
+if (account?.email) return Astro.redirect('/account');
 ---
 
 <Layout title="Log in" description="Log in to bonitashare to keep track of the files you've shared.">

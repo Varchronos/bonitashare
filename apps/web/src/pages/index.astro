@@ -5,12 +5,17 @@ import RecentlyViewed from "../components/RecentlyViewed";
 import { getSession } from "../lib/session";
 import { getUsage } from "../lib/usage";
 import { getFiles } from "../lib/files";
+import { currentAccount } from "../lib/account";
+import { getVisits } from "../lib/visits";
 
 // Resolve (or mint) the session up front so the upload widget already has
 // a session cookie by the time it posts.
 const { cookie } = await getSession(Astro);
 const RECENT_FILES = 4;
-const [usage, files] = await Promise.all([getUsage(cookie), getFiles(cookie, RECENT_FILES)]);
+const [usage, files, account] = await Promise.all([getUsage(cookie), getFiles(cookie, RECENT_FILES), currentAccount(Astro)]);
+// Signed-in users' "Shared with you" lives on the server; anonymous users' in IndexedDB.
+const signedIn = Boolean(account?.email);
+const visits = signedIn ? await getVisits(cookie) : null;
 
 const features = [
 	{
@@ -36,16 +41,19 @@ const features = [
 					Share files fast <span class="text-primary">thats it.</span>
 				</h1>
 				<p class="mb-6 text-lg leading-relaxed text-on-surface-variant">literally thats it. Quick & easy.</p>
-				<!-- hidden for now not implemented -->
-				<!-- <div class="flex flex-wrap items-center gap-3">
-					<a href="/login" class="btn btn-outlined">Log in</a>
-					<span class="text-sm text-on-surface-variant">to keep track of shared files.</span>
-				</div> -->
+				{
+					!signedIn && (
+						<div class="flex flex-wrap items-center gap-3">
+							<a href="/login" class="btn btn-outlined">Log in</a>
+							<span class="text-sm text-on-surface-variant">to keep track of shared files.</span>
+						</div>
+					)
+				}
 			</div>
 			<div>
 				<FileUpload client:load usage={usage} files={files} filesLimit={RECENT_FILES} />
-				<!-- Lives in this browser's IndexedDB, so there's nothing to render on the server. -->
-				<RecentlyViewed client:only="react" />
+				<!-- client:only: anonymous users' list is in IndexedDB, which the server can't read. -->
+				<RecentlyViewed client:only="react" signedIn={signedIn} remote={visits} />
 			</div>
 		</section>
 

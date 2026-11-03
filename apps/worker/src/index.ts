@@ -223,25 +223,39 @@ async function purgeFile(fileId: string) {
 
 // Objects a worker writes after its file was purged (a thumbnail finishing at that moment) aren't
 // tracked anywhere; they're left to a future bucket lifecycle rule.
+//
+// Batch after batch until nothing is due, so a deleted account's files all go in one run. Stops early
+// when a whole batch failed: storage is likely down, and the next sweep tries again.
 async function purgeDeletedFiles() {
-    const due = await db
-        .select({ fileId: fileDeletions.fileId })
-        .from(fileDeletions)
-        .where(lte(fileDeletions.purgeAfter, sql`now()`))
-        .limit(PURGE_BATCH_SIZE);
-    if (due.length === 0) return;
-
     let purged = 0;
-    for (const { fileId } of due) {
-        try {
-            await purgeFile(fileId);
-            purged++;
-        } catch (err) {
-            // One file's storage trouble shouldn't hold up the rest; it stays due for the next sweep.
-            console.error(`purge: file ${fileId} failed, retrying next sweep:`, err);
+    let failed = 0;
+    for (;;) {
+        const due = await db
+            .select({ fileId: fileDeletions.fileId })
+            .from(fileDeletions)
+            .where(lte(fileDeletions.purgeAfter, sql`now()`))
+            // A total order (an account's files all share one purgeAfter), so the files that failed are always
+            // the first ones left and the offset skips exactly them until the next sweep.
+            .orderBy(fileDeletions.purgeAfter, fileDeletions.fileId)
+            .limit(PURGE_BATCH_SIZE)
+            .offset(failed);
+        if (due.length === 0) break;
+
+        let batchPurged = 0;
+        for (const { fileId } of due) {
+            try {
+                await purgeFile(fileId);
+                batchPurged++;
+            } catch (err) {
+                // One file's storage trouble shouldn't hold up the rest; it stays due for the next sweep.
+                console.error(`purge: file ${fileId} failed, retrying next sweep:`, err);
+                failed++;
+            }
         }
+        purged += batchPurged;
+        if (batchPurged === 0 || due.length < PURGE_BATCH_SIZE) break;
     }
-    console.log(`purge: ${purged} of ${due.length} deleted files purged`);
+    if (purged + failed > 0) console.log(`purge: ${purged} deleted files purged, ${failed} failed`);
 }
 
 // Only moves a row out of 'pending', so a sweep racing a job that just finished can't overwrite its result.

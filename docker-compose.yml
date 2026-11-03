@@ -112,9 +112,17 @@ services:
       dockerfile: apps/web/Dockerfile
       target: dev
     working_dir: /app/apps/web
-    command: node_modules/.bin/astro dev --host --force
+    # --ignore-lock: Astro's lock file (.astro/dev.json) is in the bind mount, so a new container reads the
+    # previous one's pid. Under --force it would SIGTERM whatever now has that pid (doppler, say) as an
+    # "old dev server". This container is always the only dev server, so the lock has nothing to do.
+    command: node_modules/.bin/astro dev --host --ignore-lock
     ports:
       - "4321:4321"
+    # Secrets come from Doppler at start; see docker/doppler-entrypoint.sh.
+    entrypoint: ["doppler-entrypoint"]
+    secrets:
+      - source: doppler_web
+        target: doppler_token
     environment:
       NODE_ENV: development
       API_INTERNAL_URL: http://api:3000
@@ -212,3 +220,5 @@ secrets:
     file: ./secrets/doppler/db
   doppler_storage:
     file: ./secrets/doppler/storage
+  doppler_web:
+    file: ./secrets/doppler/web

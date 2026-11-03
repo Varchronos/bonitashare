@@ -5,6 +5,7 @@ import type { FastifyPluginAsync, FastifyReply, FastifyRequest, onRequestHookHan
 import fp from "fastify-plugin";
 import type { ApiFailure } from "@bonitashare/shared-types";
 import { gen32Token, hashToken } from "@/utils/crypto.js";
+import { deviceTypeOf } from "@/utils/device.js";
 
 declare module "fastify" {
     interface FastifyRequest {
@@ -21,6 +22,9 @@ declare module "fastify" {
 }
 
 const SESSION_COOKIE = "session";
+// While an account is logged in, the anonymous session this browser had before, so logout can hand it
+// back. Only the browser can hold it: the server keeps nothing but token hashes.
+const ANON_COOKIE = "anon_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 // The cookie must outlive the session it carries — otherwise the browser
 // drops it the moment the session expires, and /session can never map the
@@ -30,33 +34,53 @@ const COOKIE_MAX_AGE_S = 400 * 24 * 60 * 60;
 
 type Session = typeof userSessions.$inferSelect;
 
-// Looks up the session the request's cookie points at, expired or not.
-// Returns null for a missing, tampered, or unknown token.
-export async function findSession(req: FastifyRequest): Promise<Session | null> {
-    const rawCookie = req.cookies[SESSION_COOKIE];
+// The raw token in a signed cookie, or null when it's missing or tampered with.
+function cookieToken(req: FastifyRequest, name: string): string | null {
+    const rawCookie = req.cookies[name];
     if (!rawCookie) return null;
 
     const unsigned = req.unsignCookie(rawCookie);
-    if (!unsigned.valid || !unsigned.value) return null;
+    return unsigned.valid && unsigned.value ? unsigned.value : null;
+}
 
-    const [session] = await db.select().from(userSessions).where(eq(userSessions.tokenHash, hashToken(unsigned.value)));
+async function sessionByToken(token: string): Promise<Session | null> {
+    const [session] = await db.select().from(userSessions).where(eq(userSessions.tokenHash, hashToken(token)));
     return session ?? null;
+}
+
+// Looks up the session the request's cookie points at, expired or not.
+// Returns null for a missing, tampered, or unknown token.
+export async function findSession(req: FastifyRequest): Promise<Session | null> {
+    const token = cookieToken(req, SESSION_COOKIE);
+    return token ? sessionByToken(token) : null;
 }
 
 export function isActive(session: Session) {
     return session.expiresAt > new Date();
 }
 
-// Issues a fresh session token. With `existing`, it's a renewal: the old
-// (expired) session row is replaced and the same user is kept. Without it,
-// a new anonymous user is created. Only /session should call this.
-export async function issueSession(req: FastifyRequest, rep: FastifyReply, existing: Session | null): Promise<string> {
+// Issues a fresh session token. With `existing`, the old session row is
+// replaced and the same user is kept: /session uses that to renew an expired
+// one, and signup to rotate the token once the account is verified. Without
+// it, a new anonymous user is created, which only /session should do.
+// With `forUserId`, the session belongs to that user instead (login), and
+// `existing`, if any, is replaced; login passes null to keep the anonymous one
+// for stashAnonymousSession.
+export async function issueSession(
+    req: FastifyRequest,
+    rep: FastifyReply,
+    existing: Session | null,
+    forUserId?: string,
+): Promise<string> {
     const rawToken = gen32Token();
 
     const userId = await db.transaction(async (tx) => {
         let userId: string;
-        if (existing) {
-            await tx.delete(userSessions).where(eq(userSessions.id, existing.id));
+        if (existing) await tx.delete(userSessions).where(eq(userSessions.id, existing.id));
+
+        if (forUserId) {
+            userId = forUserId;
+        } else if (existing) {
             userId = existing.userId;
         } else {
             const [user] = await tx.insert(users).values({}).returning();
@@ -67,26 +91,55 @@ export async function issueSession(req: FastifyRequest, rep: FastifyReply, exist
             userId,
             tokenHash: hashToken(rawToken),
             userAgent: req.headers["user-agent"] ?? null,
+            deviceType: deviceTypeOf(req.headers["user-agent"]),
             ipAddress: req.ip,
             expiresAt: new Date(Date.now() + SESSION_TTL_MS),
         });
         return userId;
     });
 
-    rep.setCookie(SESSION_COOKIE, rawToken, {
-        signed: true,
-        httpOnly: true,
-        sameSite: "lax",
+    setTokenCookie(rep, SESSION_COOKIE, rawToken);
+
+    return userId;
+}
+
+// At login: keeps the request's (anonymous) session token in ANON_COOKIE, for endSession to restore.
+// Its row stays as it is, so the anonymous user's files come back with it.
+export function stashAnonymousSession(req: FastifyRequest, rep: FastifyReply) {
+    const token = cookieToken(req, SESSION_COOKIE);
+    if (token) setTokenCookie(rep, ANON_COOKIE, token);
+}
+
+// Ends the request's session: its row goes, and the cookie is cleared with the same scope it was set
+// with, or the browser keeps it. If login stashed an anonymous session that still exists, it becomes
+// the browser's session again (expired is fine: /session renews it for the same user); otherwise the
+// next GET /session starts a new anonymous user.
+export async function endSession(req: FastifyRequest, rep: FastifyReply, session: Session) {
+    await db.delete(userSessions).where(eq(userSessions.id, session.id));
+
+    const anonToken = cookieToken(req, ANON_COOKIE);
+    const anon = anonToken ? await sessionByToken(anonToken) : null;
+    // Only ever back to an anonymous user, never into another account.
+    const [anonUser] = anon ? await db.select({ email: users.email }).from(users).where(eq(users.id, anon.userId)) : [];
+
+    if (anonToken && anonUser && !anonUser.email) setTokenCookie(rep, SESSION_COOKIE, anonToken);
+    else rep.clearCookie(SESSION_COOKIE, cookieScope());
+    rep.clearCookie(ANON_COOKIE, cookieScope());
+}
+
+function setTokenCookie(rep: FastifyReply, name: string, token: string) {
+    rep.setCookie(name, token, { ...cookieScope(), signed: true, httpOnly: true, sameSite: "lax", maxAge: COOKIE_MAX_AGE_S });
+}
+
+function cookieScope() {
+    return {
         path: "/",
         secure: process.env.NODE_ENV === "production",
-        maxAge: COOKIE_MAX_AGE_S,
         // Unset locally (localhost already shares cookies across ports).
         // In prod, set to the shared parent domain (e.g. ".example.com")
         // so both the web app's SSR server and the API receive it.
         domain: process.env.COOKIE_DOMAIN || undefined,
-    });
-
-    return userId;
+    };
 }
 
 const handleSession: FastifyPluginAsync = async (fastify) => {

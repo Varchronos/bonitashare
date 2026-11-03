@@ -1,7 +1,9 @@
 import { createStore, del, entries, set, delMany, clear } from 'idb-keyval';
+import { MAX_VISITS } from '@bonitashare/shared-types';
 
-// Other people's files this browser has opened, newest first, for the homepage's "Recently viewed".
-// Only in the browser: it's a convenience, not account data, so nothing goes to the server.
+// Other people's files this browser has opened while anonymous, newest first, for the homepage's
+// "Shared with you". Anonymous browsing never goes to the server; signup moves this list onto the
+// account (see toSignupVisits), and signed-in users' visits are kept there instead (lib/visits.ts).
 export type RecentVisit = {
 	id: string;
 	filename: string;
@@ -11,8 +13,6 @@ export type RecentVisit = {
 	thumbnailUrl: string | null;
 	visitedAt: number;
 };
-
-const MAX_VISITS = 24;
 
 // Its own database rather than idb-keyval's default: the upload store's clear() wipes that one whole.
 // Created lazily, since modules importing this also render on the server, which has no indexedDB.
@@ -34,3 +34,13 @@ export async function listVisits(): Promise<RecentVisit[]> {
 
 export const removeVisit = (id: string) => del(id, db());
 export const clearVisits = () => clear(db());
+
+// The list in the shape signup verify takes, to move onto the new account. Empty if IndexedDB can't
+// be read: signup shouldn't fail over it.
+export async function toSignupVisits() {
+	try {
+		return (await listVisits()).map((v) => ({ kind: 'file' as const, id: v.id, visitedAt: v.visitedAt }));
+	} catch {
+		return [];
+	}
+}

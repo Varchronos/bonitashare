@@ -30,6 +30,7 @@ export async function getSession(Astro: AstroGlobal) {
 		}
 	}
 
+	Astro.locals.sessionCookie = cookie;
 	const { data } = (await res.json()) as ApiResponse<{ userId: string }>;
 	return { userId: data?.userId ?? null, cookie };
 }

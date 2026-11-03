@@ -9,6 +9,7 @@ import { TrashIcon } from './icons';
 import FileThumb from './FileThumb';
 import ShareLinks from './ShareLinks';
 import { useDeleteFile } from './useDeleteFile';
+import { useAsyncAction } from '../../hooks/useAsyncAction';
 
 // The user's finished uploads, from the server a page at a time. Uploads still in the local store
 // (in progress, or finished during this visit) are left out here: TaskList already shows them.
@@ -16,17 +17,13 @@ import { useDeleteFile } from './useDeleteFile';
 export default function UserFiles({ initial, limit }: { initial: FilePage | null; limit?: number }) {
 	const [files, setFiles] = useState<UserFile[]>(initial?.files ?? []);
 	const [cursor, setCursor] = useState(initial?.nextCursor ?? null);
-	const [loading, setLoading] = useState(false);
-	const [failed, setFailed] = useState(false);
 	const localIds = useUploadStore(useShallow((s) => s.files.map(shareIdFor)));
 	// This also renders on the server, which has no window; links are relative until hydrated.
 	const [origin, setOrigin] = useState('');
 
-	async function load(from: string | null) {
-		setLoading(true);
-		setFailed(false);
-		try {
-			const page = await fetchFiles(from);
+	const { trigger: load, isPending: loading, isError: failed } = useAsyncAction({
+		triggerFn: fetchFiles,
+		onSuccess: (page) => {
 			// Keyed by id: an upload finishing between two fetches shifts the pages, and the same file
 			// could otherwise come back twice.
 			setFiles((prev) => {
@@ -34,12 +31,8 @@ export default function UserFiles({ initial, limit }: { initial: FilePage | null
 				return [...prev, ...page.files.filter((f) => !seen.has(f.id))];
 			});
 			setCursor(page.nextCursor);
-		} catch {
-			setFailed(true);
-		} finally {
-			setLoading(false);
-		}
-	}
+		},
+	});
 
 	// The page couldn't fetch the first page while rendering; try again from here.
 	useEffect(() => {

@@ -2,6 +2,7 @@
 import Layout from "../../layouts/Layout.astro";
 import { formatBytes } from "@bonitashare/shared-types";
 import { getFileLink, getFileVideo } from "../../lib/file";
+import { currentAccount } from "../../lib/account";
 
 const { id } = Astro.params;
 const { data: file, error, cookie } = await getFileLink(Astro, id!);
@@ -62,8 +63,11 @@ const videoBox =
 		: undefined;
 const videoClass = `${mediaClass} border border-outline-variant dark:border-0`;
 
-// For the homepage's recently-viewed list (lib/recent-visits.ts): other people's files are recorded,
-// your own aren't (they're under your uploads), and a link that no longer works is dropped from it.
+// For the homepage's "Shared with you": other people's files are recorded, your own aren't (they're
+// under your uploads). Signed in, on the server (lib/visits.ts); anonymous, in this browser's IndexedDB
+// (lib/recent-visits.ts), where a link that no longer works is also dropped. The server leaves those
+// out when it reads the list. The navbar asks for the account anyway, so this costs no extra call.
+const signedIn = Boolean((await currentAccount(Astro))?.email);
 const visit =
 	file && !file.isOwner
 		? {
@@ -153,15 +157,24 @@ const visit =
 			)
 		}
 	</section>
-	<div id="recent-visit" hidden data-visit={visit ? JSON.stringify(visit) : undefined} data-gone={file ? undefined : id} />
+	<div
+		id="recent-visit"
+		hidden
+		data-visit={visit ? JSON.stringify(visit) : undefined}
+		data-gone={file ? undefined : id}
+		data-signed-in={signedIn ? "" : undefined}
+	/>
 </Layout>
 
 <script>
 	import { recordVisit, removeVisit } from "../../lib/recent-visits";
+	import { recordRemoteVisit } from "../../lib/visits";
 
 	const recent = document.getElementById("recent-visit")?.dataset;
-	// Not awaited: the player below shouldn't wait on IndexedDB, and failing (private window) is fine.
-	if (recent?.visit) recordVisit(JSON.parse(recent.visit)).catch(() => {});
+	// Not awaited: the player below shouldn't wait on the list, and failing (private window, offline) is fine.
+	if (recent?.signedIn !== undefined) {
+		if (recent.visit) recordRemoteVisit("file", JSON.parse(recent.visit).id).catch(() => {});
+	} else if (recent?.visit) recordVisit(JSON.parse(recent.visit)).catch(() => {});
 	else if (recent?.gone) removeVisit(recent.gone).catch(() => {});
 
 	const player = document.querySelector<HTMLVideoElement>("video[data-hls-src]");

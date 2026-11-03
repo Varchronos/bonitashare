@@ -74,5 +74,49 @@ export type DeletedFile = {
   purgeAfter: string
 }
 
+// GET /visits: an artifact (another user's file or album) a signed-in user has opened, newest first.
+// Anonymous users keep the same list in IndexedDB instead (apps/web/src/lib/recent-visits.ts).
+// Only files for now: albums join this union once they have pages to visit.
+export type ArtifactKind = 'file' | 'album'
+
+export type Visit = {
+  kind: 'file'
+  id: string
+  filename: string
+  contentType: string | null
+  sizeBytes: number
+  thumbnailUrl: string | null
+  visitedAt: string
+}
+
+// The most visits kept per user, on the server and in IndexedDB alike.
+export const MAX_VISITS = 24
+
+// POST /auth/signup and /auth/signup/resend: a code is on its way to `email`.
+export type OtpSent = {
+  email: string
+  expiresAt: string
+  // The earliest a resend is accepted.
+  resendAfter: string
+}
+
+// POST /auth/signup/verify: the browser's user now has this account, under a new session cookie.
+export type SignedUp = {
+  userId: string
+  email: string
+  displayName: string | null
+}
+
+// POST /auth/login: the browser now has a session for this account.
+export type LoggedIn = SignedUp
+
+// GET /account: the browser's user. email is null while it's still anonymous.
+export type Account = {
+  userId: string
+  email: string | null
+  displayName: string | null
+  tier: import('./tiers.js').Tier
+}
+
 export * from './tiers.js'
 export * from './utils/byte-conversion.js'

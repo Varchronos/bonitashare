@@ -5,16 +5,24 @@ import { fastifyAutoload as autoload } from '@fastify/autoload'
 import path from "path";
 import { fileURLToPath } from "url";
 import fastifyCookie from "@fastify/cookie";
+import fastifyRateLimit from "@fastify/rate-limit";
 import handleSession from "./plugins/custom/handleSession.js";
 import { ensureBucket } from "./storage/client.js";
 import { closeTusConnections } from "./upload/tusServer.js";
 import { fileProcessingQueue, redisConnection, videoProcessingQueue } from "./queue/client.js";
 import { pool } from "./db/client.js";
+import { rateLimitRedis } from "./auth/rateLimit.js";
 import { onShutdown } from "@bonitashare/core/shutdown";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const app = Fastify({ logger: true });
+const app = Fastify({
+  logger: true,
+  // Browsers only reach the API through the web app, which sets X-Forwarded-For to the visitor's
+  // address. Trusted only from loopback and private addresses (the compose network), so req.ip is the
+  // visitor there and can't be faked by anyone outside.
+  trustProxy: ["loopback", "uniquelocal"],
+});
 
 // Public and session-free, and outside /api/v1 so container healthchecks don't track API versions.
 // Sessions are only ever issued by GET /api/v1/session; other routes opt into
@@ -29,6 +37,14 @@ app.register(fastifyCookie, {
 })
 
 app.register(handleSession)
+
+// Nothing is limited globally; routes opt in through createRateLimit (see auth/rateLimit.ts).
+app.register(fastifyRateLimit, {
+  global: false,
+  redis: rateLimitRedis,
+  nameSpace: "rl:",
+  skipOnError: true,
+})
 
 
 app.addContentTypeParser(
@@ -71,6 +87,7 @@ onShutdown("api", SHUTDOWN_DEADLINE_MS, async () => {
   await fileProcessingQueue.close();
   await videoProcessingQueue.close();
   await redisConnection.quit();
+  await rateLimitRedis.quit();
   await pool.end();
 });
 

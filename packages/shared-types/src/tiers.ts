@@ -56,7 +56,7 @@ export type Usage = {
     storage: { used: number; limit: number | null };
 }
 
-const PLAN_NAMES: Record<Tier, string> = { anonymous: 'Guest', free: 'Free', pro: 'Pro' }
+export const PLAN_NAMES: Record<Tier, string> = { anonymous: 'Guest', free: 'Free', pro: 'Pro' }
 
 // Why an upload was refused. Shared so the server's 403/413 and the upload page's own check before
 // sending say the same thing, with the numbers that matter for each.

@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
-import { formatBytes } from '@bonitashare/shared-types';
+import { formatBytes, type Visit } from '@bonitashare/shared-types';
 import { clearVisits, listVisits, removeVisit, type RecentVisit } from '../lib/recent-visits';
+import { clearRemoteVisits, removeRemoteVisit } from '../lib/visits';
 import FileThumb from './upload/FileThumb';
 import { TrashIcon } from './upload/icons';
 
-// Files other people shared that this browser has opened, read from IndexedDB once hydrated. Renders
-// nothing on the server and until there's something to show.
-export default function RecentlyViewed({ limit = 8 }: { limit?: number }) {
-	const [visits, setVisits] = useState<RecentVisit[]>([]);
+// Files other people shared that this user has opened. Signed in, the page hands over the server's
+// list (`remote`, null if it couldn't load); anonymous, it's read from IndexedDB once hydrated. Renders
+// nothing until there's something to show. Removing and clearing don't wait for the write.
+export default function RecentlyViewed({ limit = 8, signedIn, remote }: { limit?: number; signedIn: boolean; remote?: Visit[] | null }) {
+	const [visits, setVisits] = useState<(RecentVisit | Visit)[]>(() => (signedIn ? (remote ?? []) : []));
 
 	useEffect(() => {
+		if (signedIn) return;
 		listVisits()
 			.then(setVisits)
 			// Private windows and blocked storage: just no list.
@@ -20,12 +23,12 @@ export default function RecentlyViewed({ limit = 8 }: { limit?: number }) {
 
 	function remove(id: string) {
 		setVisits((prev) => prev.filter((v) => v.id !== id));
-		removeVisit(id).catch(() => {});
+		(signedIn ? removeRemoteVisit('file', id) : removeVisit(id)).catch(() => {});
 	}
 
 	function clearAll() {
 		setVisits([]);
-		clearVisits().catch(() => {});
+		(signedIn ? clearRemoteVisits() : clearVisits()).catch(() => {});
 	}
 
 	return (
