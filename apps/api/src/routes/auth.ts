@@ -10,6 +10,7 @@ import { sendEmail } from "@/email/client.js";
 import { signupCodeEmail } from "@/email/templates.js";
 import { hashToken } from "@/utils/crypto.js";
 import { recordFileVisits } from "@/visits/record.js";
+import { clearLoginFailures, createAuthLimits, loginLockedFor, recordLoginFailure, tooManyRequests } from "@/auth/rateLimit.js";
 
 type SignupBody = { email?: unknown; password?: unknown; displayName?: unknown };
 
@@ -17,6 +18,9 @@ type SignupBody = { email?: unknown; password?: unknown; displayName?: unknown }
 const authRoutes: FastifyPluginAsync = async (fastify) => {
     // signup and login still require an anonymous session, the sessionid will reset once signup/login is complete
     fastify.addHook("onRequest", fastify.requireSession);
+
+    // Per-email limits run inside the handlers, once the email has been checked, so the key is always valid.
+    const limits = createAuthLimits(fastify, (req) => normalizeEmail((req.body as { email?: unknown } | undefined)?.email)!);
 
     // Sends the code for a row just written. If sending fails the row goes too, so the cooldown it
     // started doesn't stop the user from trying again straight away.
@@ -33,7 +37,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Served at /api/v1/auth/signup: step one. Nothing changes on the user yet; the email and password
     // wait in email_otps until /auth/signup/verify proves the inbox is theirs.
-    fastify.post<{ Body: SignupBody }>("/auth/signup", async (req, reply): Promise<ApiResponse<OtpSent>> => {
+    fastify.post<{ Body: SignupBody }>("/auth/signup", { onRequest: limits.signupSend }, async (req, reply): Promise<ApiResponse<OtpSent>> => {
         const userId = req.userId!;
         const body = req.body ?? {};
 
@@ -44,6 +48,9 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         if (typeof password !== "string" || password.length < PASSWORD_MIN_LENGTH || password.length > PASSWORD_MAX_LENGTH) {
             return fail(reply, 400, "INVALID_PASSWORD", `Password must be ${PASSWORD_MIN_LENGTH}–${PASSWORD_MAX_LENGTH} characters`);
         }
+
+        const sendWait = await limits.sendBlocked(req);
+        if (sendWait) return tooManyRequests(reply, sendWait);
 
         const displayName = typeof body.displayName === "string" ? body.displayName.trim() || null : null;
         if (displayName && displayName.length > DISPLAY_NAME_MAX_LENGTH) {
@@ -82,6 +89,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
             .returning({ id: emailOtps.id });
         if (!otp) return fail(reply, 429, "OTP_COOLDOWN", "A code was just sent. Wait a minute before asking for another.");
 
+        await limits.spendSend(req);
         const failed = await deliver(reply, otp.id, email, code);
         if (failed) return failed;
 
@@ -90,10 +98,14 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
 
     // Served at /api/v1/auth/signup/resend: a new code for a signup this browser started, keeping the
     // password it gave. The old code stops working.
-    fastify.post<{ Body: { email?: unknown } }>("/auth/signup/resend", async (req, reply): Promise<ApiResponse<OtpSent>> => {
+    fastify.post<{ Body: { email?: unknown } }>("/auth/signup/resend", { onRequest: limits.signupSend }, async (req, reply): Promise<ApiResponse<OtpSent>> => {
         const userId = req.userId!;
         const email = normalizeEmail(req.body?.email);
         if (!email) return fail(reply, 400, "INVALID_EMAIL", "Enter a valid email address");
+
+        // Each resend gives the code fresh attempts, so this budget is also what caps guesses per address.
+        const sendWait = await limits.sendBlocked(req);
+        if (sendWait) return tooManyRequests(reply, sendWait);
 
         const [pending] = await db
             .select({ createdAt: emailOtps.createdAt })
@@ -118,6 +130,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
             .returning({ id: emailOtps.id });
         if (!otp) return fail(reply, 429, "OTP_COOLDOWN", "A code was just sent. Wait a minute before asking for another.");
 
+        await limits.spendSend(req);
         const failed = await deliver(reply, otp.id, email, code);
         if (failed) return failed;
 
@@ -127,7 +140,7 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     // Served at /api/v1/auth/signup/verify: step two. A right code upgrades this browser's anonymous
     // user in place — same user_id, so its files and usage stay — and rotates the session token. The
     // browser sends its recently viewed list along (`visits`, from IndexedDB) to move onto the account.
-    fastify.post<{ Body: { email?: unknown; code?: unknown; visits?: unknown } }>("/auth/signup/verify", async (req, reply): Promise<ApiResponse<SignedUp>> => {
+    fastify.post<{ Body: { email?: unknown; code?: unknown; visits?: unknown } }>("/auth/signup/verify", { onRequest: limits.verify }, async (req, reply): Promise<ApiResponse<SignedUp>> => {
         const userId = req.userId!;
         const email = normalizeEmail(req.body?.email);
         const code = typeof req.body?.code === "string" ? req.body.code.trim() : "";
@@ -212,13 +225,16 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
     // Served at /api/v1/auth/login: swaps this browser's anonymous session for one on the account.
     // The anonymous user and its files are left as they were, its session put aside for logout to
     // restore (see stashAnonymousSession).
-    fastify.post<{ Body: { email?: unknown; password?: unknown } }>("/auth/login", async (req, reply): Promise<ApiResponse<LoggedIn>> => {
+    fastify.post<{ Body: { email?: unknown; password?: unknown } }>("/auth/login", { onRequest: limits.login }, async (req, reply): Promise<ApiResponse<LoggedIn>> => {
         const userId = req.userId!;
         const email = normalizeEmail(req.body?.email);
         const password = req.body?.password;
         // One answer for every way it can be wrong, so the form can't be used to find out who has an account.
         const invalid = () => fail(reply, 401, "INVALID_CREDENTIALS", "Email or password is incorrect");
         if (!email || typeof password !== "string" || !password || password.length > PASSWORD_MAX_LENGTH) return invalid();
+
+        const lockedFor = await loginLockedFor(email, req.log);
+        if (lockedFor) return tooManyRequests(reply, lockedFor);
 
         const [me] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
         if (me?.email) return fail(reply, 409, "ALREADY_SIGNED_IN", "You're already signed in to an account");
@@ -228,8 +244,13 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
             .from(users)
             .where(sql`lower(${users.email}) = ${email}`);
         const ok = account?.passwordHash ? await verifyPassword(account.passwordHash, password) : await verifyNothing(password);
-        if (!account || !ok) return invalid();
+        if (!account || !ok) {
+            // The failure that hits the limit is already answered with the lockout.
+            const lockout = await recordLoginFailure(email, req.log);
+            return lockout ? tooManyRequests(reply, lockout) : invalid();
+        }
 
+        await clearLoginFailures(email, req.log);
         stashAnonymousSession(req, reply);
         await issueSession(req, reply, null, account.id);
 
