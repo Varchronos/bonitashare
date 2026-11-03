@@ -4,6 +4,7 @@ import { useUploadStore } from '../../store/file-store';
 import { enqueueFile, isUploadFinished } from '../../lib/upload-task';
 import { quotaProblem, useUsageStore } from '../../store/usage-store';
 import TaskList from './TaskList';
+import TierInfo from './TierInfo';
 import UsageMeter from './UsageMeter';
 import UserFiles from './UserFiles';
 
@@ -56,42 +57,48 @@ export default function FileUpload({
 
 	return (
 		<div className="flex w-full min-w-0 flex-col gap-4">
-			<UsageMeter initial={usage} />
-
-			<div
-				className="flex cursor-pointer flex-col items-center gap-1 rounded-[28px] border-2 border-dashed border-outline-variant bg-surface-container-low px-4 py-12 text-center text-on-surface-variant transition-colors duration-150 hover:border-primary hover:bg-surface-container focus-visible:border-primary focus-visible:bg-surface-container focus-visible:outline-none"
-				role="button"
-				tabIndex={0}
-				onClick={() => inputRef.current?.click()}
-				onKeyDown={(e) => {
-					if (e.key === 'Enter' || e.key === ' ') {
-						e.preventDefault();
-						inputRef.current?.click();
-					}
-				}}
-				onDragOver={(e) => e.preventDefault()}
-				onDrop={(e) => {
-					e.preventDefault();
-					enqueue(e.dataTransfer.files);
-				}}
-			>
-				<div className="mb-3 flex size-16 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
-					<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-						<path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" strokeLinecap="round" strokeLinejoin="round" />
-					</svg>
-				</div>
-				<p className="text-base font-medium text-on-surface">Drag &amp; drop files here</p>
-				<p className="text-sm">or click to browse — uploads start right away</p>
-				<input
-					ref={inputRef}
-					type="file"
-					multiple
-					hidden
-					onChange={(e) => {
-						enqueue(e.target.files);
-						e.target.value = '';
+			{/* Dropzone first, two thirds of the row; on phones a column reversed, so the meter sits on top. */}
+			<div className="flex flex-col-reverse gap-4 md:flex-row">
+				<div
+					className="flex min-w-0 cursor-pointer flex-col items-center justify-center gap-1 md:flex-2 rounded-[28px] border-2 border-dashed border-outline-variant bg-surface-container-low px-4 py-12 text-center text-on-surface-variant transition-colors duration-150 hover:border-primary hover:bg-surface-container focus-visible:border-primary focus-visible:bg-surface-container focus-visible:outline-none"
+					role="button"
+					tabIndex={0}
+					onClick={() => inputRef.current?.click()}
+					onKeyDown={(e) => {
+						if (e.key === 'Enter' || e.key === ' ') {
+							e.preventDefault();
+							inputRef.current?.click();
+						}
 					}}
-				/>
+					onDragOver={(e) => e.preventDefault()}
+					onDrop={(e) => {
+						e.preventDefault();
+						enqueue(e.dataTransfer.files);
+					}}
+				>
+					<div className="mb-3 flex size-16 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
+						<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
+							<path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" strokeLinecap="round" strokeLinejoin="round" />
+						</svg>
+					</div>
+					<p className="text-base font-medium text-on-surface">Drag &amp; drop files here</p>
+					<p className="text-sm">or click to browse — uploads start right away</p>
+					<input
+						ref={inputRef}
+						type="file"
+						multiple
+						hidden
+						onChange={(e) => {
+							enqueue(e.target.files);
+							e.target.value = '';
+						}}
+					/>
+				</div>
+				{/* empty:hidden: both render nothing without usage, and the dropzone then takes the row. */}
+				<div className="flex min-w-0 flex-col gap-4 empty:hidden md:flex-1">
+					<UsageMeter initial={usage} />
+					<TierInfo initial={usage} />
+				</div>
 			</div>
 
 			<TaskList />
