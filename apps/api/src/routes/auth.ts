@@ -11,8 +11,12 @@ import { signupCodeEmail } from "@/email/templates.js";
 import { hashToken } from "@/utils/crypto.js";
 import { recordFileVisits } from "@/visits/record.js";
 import { clearLoginFailures, createAuthLimits, loginLockedFor, recordLoginFailure, tooManyRequests } from "@/auth/rateLimit.js";
+import { verifyTurnstile } from "@/auth/turnstile.js";
 
-type SignupBody = { email?: unknown; password?: unknown; displayName?: unknown };
+type SignupBody = { email?: unknown; password?: unknown; displayName?: unknown; turnstileToken?: unknown };
+
+// Must match data-action on the signup form's Turnstile widget (apps/web/src/components/AuthForm.astro).
+const TURNSTILE_SIGNUP_ACTION = "signup";
 
 
 const authRoutes: FastifyPluginAsync = async (fastify) => {
@@ -56,6 +60,11 @@ const authRoutes: FastifyPluginAsync = async (fastify) => {
         if (displayName && displayName.length > DISPLAY_NAME_MAX_LENGTH) {
             return fail(reply, 400, "INVALID_DISPLAY_NAME", `Name must be at most ${DISPLAY_NAME_MAX_LENGTH} characters`);
         }
+
+        // Before anything that looks up the email, so bots can't use signup to find out who has an account.
+        const human = await verifyTurnstile(body.turnstileToken, TURNSTILE_SIGNUP_ACTION, req.ip, req.log);
+        if (human === "unavailable") return fail(reply, 503, "TURNSTILE_UNAVAILABLE", "Couldn't run the security check. Try again in a moment.");
+        if (human === "invalid") return fail(reply, 400, "TURNSTILE_FAILED", "The security check didn't pass. Try again.");
 
         const [me] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId));
         if (me?.email) return fail(reply, 409, "ALREADY_SIGNED_UP", "You're already signed in to an account");

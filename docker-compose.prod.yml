@@ -87,6 +87,11 @@ services:
       dockerfile: apps/web/Dockerfile
       target: runtime
     # Not published: cloudflared reaches it over the compose network.
+    entrypoint: ["doppler-entrypoint"]
+    command: node dist/server/entry.mjs
+    secrets:
+      - source: doppler_web
+        target: doppler_token
     environment:
       API_INTERNAL_URL: http://api:3000
     depends_on:
@@ -166,6 +171,8 @@ secrets:
     file: ./secrets/doppler/prod/worker
   doppler_db:
     file: ./secrets/doppler/prod/db
+  doppler_web:
+    file: ./secrets/doppler/prod/web
   # Token of the Cloudflare tunnel (Zero Trust -> Networks -> Tunnels). Gitignored. cloudflared runs as
   # a non-root user and file secrets keep their host permissions, so the file must be world-readable
   # (644); keep its directory 700 so other host users still can't reach it.

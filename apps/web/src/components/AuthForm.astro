@@ -5,6 +5,8 @@ interface Props {
 
 const { mode } = Astro.props;
 const isSignup = mode === 'signup';
+// Read per request (process.env, not import.meta.env), so it comes from Doppler at runtime, not build time.
+const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY;
 ---
 
 <section class="mx-auto flex w-full max-w-page justify-center px-4 py-16">
@@ -39,6 +41,16 @@ const isSignup = mode === 'signup';
 				/>
 				<span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 px-1 text-base text-on-surface-variant transition-all peer-focus:-top-3 peer-focus:left-0 peer-focus:text-xs peer-focus:text-primary peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:text-xs">Password</span>
 			</label>
+			{
+				// Turnstile adds a hidden cf-turnstile-response input to the form once solved. data-action has to
+				// match TURNSTILE_SIGNUP_ACTION in the API's routes/auth.ts.
+				isSignup && (
+					<>
+						<div class="cf-turnstile -my-4" data-sitekey={turnstileSiteKey} data-action="signup" data-theme="auto" data-size="flexible" />
+						<script is:inline src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+					</>
+				)
+			}
 			<p data-auth-error role="alert" class="-my-4 text-sm text-error empty:hidden"></p>
 			<button type="submit" class="btn btn-filled mt-2 w-full">{isSignup ? 'Sign up' : 'Log in'}</button>
 		</form>
@@ -58,6 +70,13 @@ const isSignup = mode === 'signup';
 <script>
 	import type { ApiResponse, LoggedIn, OtpSent } from '@bonitashare/shared-types';
 	import { savePendingSignup } from '../lib/pending-signup';
+
+	// From the Turnstile script, which only the signup form loads.
+	declare global {
+		interface Window {
+			turnstile?: { reset(widget?: string | HTMLElement): void };
+		}
+	}
 
 	const form = document.querySelector<HTMLFormElement>('form[data-auth-form]');
 	const errorEl = form?.querySelector<HTMLElement>('[data-auth-error]');
@@ -93,10 +112,17 @@ const isSignup = mode === 'signup';
 				return;
 			}
 
-			const body = await post<OtpSent>('signup', { displayName: fields.get('displayName'), email, password });
+			const turnstileToken = fields.get('cf-turnstile-response');
+			if (!turnstileToken) {
+				errorEl.textContent = 'Wait for the security check to finish, then try again.';
+				return;
+			}
+			const body = await post<OtpSent>('signup', { displayName: fields.get('displayName'), email, password, turnstileToken });
 			if (body.error) {
 				if (body.error.code === 'ALREADY_SIGNED_UP') return void location.assign('/account');
 				errorEl.textContent = body.error.message;
+				// A token works once, so the next try needs a new one.
+				window.turnstile?.reset();
 				return;
 			}
 			savePendingSignup(body.data);
