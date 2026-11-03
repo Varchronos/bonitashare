@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
-/* Material 3. Colour roles from an M3 tonal scheme with an orange seed, plus a green success set M3
-   doesn't define. `on-*` is the colour for text and icons sitting on the role it names. */
+/* Material 3. Colour roles from an M3 tonal scheme with an orange seed, plus green success and yellow
+   warning sets M3 doesn't define. `on-*` is the colour for text and icons sitting on the role it names. */
 @theme {
 	--font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 	--container-page: 1080px;
@@ -38,6 +38,10 @@
 	--color-success: #386a20;
 	--color-success-container: #b8f397;
 	--color-on-success-container: #205107;
+
+	--color-warning: #6d5e0f;
+	--color-warning-container: #f8e287;
+	--color-on-warning-container: #534600;
 }
 
 /* The theme is <html data-theme>, set before first paint by the script in Layout.astro (saved choice,
@@ -70,6 +74,10 @@
 	--color-success: #9dd67d;
 	--color-success-container: #205107;
 	--color-on-success-container: #b8f397;
+
+	--color-warning: #dbc66e;
+	--color-warning-container: #534600;
+	--color-on-warning-container: #f8e287;
 }
 
 @layer base {
