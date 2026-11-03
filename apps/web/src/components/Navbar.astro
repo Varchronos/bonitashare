@@ -14,6 +14,7 @@ const signedIn = Boolean((await currentAccount(Astro))?.email);
 const links = [
 	{ href: "/", label: "Home" },
 	{ href: "/upload", label: "Uploads" },
+	{ href: "/about", label: "About" },
 	...(signedIn ? [] : [{ href: "/login", label: "Login" }]),
 ];
 // The end of the bar (and the menu): a filled Sign up button, or once signed in a link to the account
