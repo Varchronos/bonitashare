@@ -129,6 +129,8 @@ const turnstileSiteKey = process.env.TURNSTILE_SITE_KEY;
 			location.assign('/verify');
 		} catch {
 			errorEl.textContent = "Couldn't reach the server. Check your connection and try again.";
+			// The request may still have reached the server and used the token up.
+			window.turnstile?.reset();
 		} finally {
 			submit.disabled = false;
 		}

@@ -43,10 +43,12 @@ export function createAuthLimits(fastify: FastifyInstance, emailOf: EmailOf) {
     const sendBudget = [perEmail("send-hour", 3, "1 hour"), perEmail("send-day", 10, "1 day")];
 
     return {
-        // onRequest hooks, so a blocked request is turned away before its body is even parsed.
+        // onRequest hooks, so a blocked request is turned away before its body is even parsed. The signup
+        // and verify ones are loose on purpose: mobile carriers put many people behind one address (CGNAT),
+        // and Turnstile plus the per-address budgets below are what actually hold back abuse.
         login: limitHook(perIp("login-minute", 10, "1 minute"), perIp("login-hour", 100, "1 hour")),
-        signupSend: limitHook(perIp("signup-send", 5, "1 hour")),
-        verify: limitHook(perIp("verify", 20, "10 minutes")),
+        signupSend: limitHook(perIp("signup-send", 25, "1 hour")),
+        verify: limitHook(perIp("verify", 60, "10 minutes")),
 
         // Seconds until another code may go to this address, or null if it may now. Checked before any
         // work is done, and only spent (spendSend) once the code is really on its way.
