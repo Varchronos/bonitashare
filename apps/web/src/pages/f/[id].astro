@@ -3,6 +3,7 @@ import Layout from "../../layouts/Layout.astro";
 import { formatBytes } from "@bonitashare/shared-types";
 import { getFileLink, getFileVideo } from "../../lib/file";
 import { currentAccount } from "../../lib/account";
+import ReportFile from "../../components/ReportFile";
 
 const { id } = Astro.params;
 const { data: file, error, cookie } = await getFileLink(Astro, id!);
@@ -134,12 +135,15 @@ const visit =
 						)}
 					</div>
 
-					<a class="btn btn-filled" href={file.downloadUrl}>
-						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-							<path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14" />
-						</svg>
-						Download file
-					</a>
+					<div class="flex flex-wrap items-center gap-3">
+						<a class="btn btn-filled" href={file.downloadUrl}>
+							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+								<path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14" />
+							</svg>
+							Download file
+						</a>
+						{!file.isOwner && <ReportFile client:idle fileId={id!} filename={file.filename} signedIn={signedIn} />}
+					</div>
 				</>
 			) : (
 				<>
