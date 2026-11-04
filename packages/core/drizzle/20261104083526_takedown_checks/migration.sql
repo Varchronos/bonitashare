@@ -1,0 +1,6 @@
+ALTER TABLE "file_takedowns" ADD CONSTRAINT "file_takedowns_state_valid" CHECK ("state" IN ('hidden', 'removed', 'held'));--> statement-breakpoint
+ALTER TABLE "file_takedowns" ADD CONSTRAINT "file_takedowns_reason_valid" CHECK ("reason" IN ('csam', 'illegal', 'copyright', 'nudity', 'harassment', 'malware', 'spam', 'other'));--> statement-breakpoint
+ALTER TABLE "file_takedowns" ADD CONSTRAINT "file_takedowns_source_valid" CHECK ("source" IN ('report', 'auto', 'admin', 'legal', 'copyright'));--> statement-breakpoint
+ALTER TABLE "reports" ADD CONSTRAINT "reports_reason_valid" CHECK ("reason" IN ('csam', 'illegal', 'copyright', 'nudity', 'harassment', 'malware', 'spam', 'other'));--> statement-breakpoint
+ALTER TABLE "reports" ADD CONSTRAINT "reports_status_valid" CHECK ("status" IN ('open', 'actioned', 'dismissed'));--> statement-breakpoint
+ALTER TABLE "takedown_events" ADD CONSTRAINT "takedown_events_action_valid" CHECK ("action" IN ('hide', 'remove', 'hold', 'release', 'dismiss', 'appeal', 'purge_content'));
