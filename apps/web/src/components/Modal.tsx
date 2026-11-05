@@ -9,13 +9,15 @@ type Props = {
 	// Under the title, before the content.
 	description?: ReactNode;
 	children: ReactNode;
+	// 'lg' for dialogs holding a full form.
+	size?: 'md' | 'lg';
 };
 
 // A dialog over the page, built on the native <dialog> opened with showModal(): the browser keeps focus
 // inside it, makes the page behind inert, and hands focus back to whatever opened it on close. `open`
 // is the only source of truth, so the dialog's own closing (Esc) is reported through onClose and the
 // parent decides.
-export default function Modal({ open, onClose, title, description, children }: Props) {
+export default function Modal({ open, onClose, title, description, children, size = 'md' }: Props) {
 	const dialogRef = useRef<HTMLDialogElement>(null);
 	const titleId = useId();
 	const descriptionId = useId();
@@ -46,13 +48,15 @@ export default function Modal({ open, onClose, title, description, children }: P
 			// Esc: keep the dialog open until the parent says otherwise.
 			onCancel={(e) => {
 				e.preventDefault();
+				// A modal opened from inside another one: React would bubble this to the outer dialog too.
+				e.stopPropagation();
 				onClose();
 			}}
 			// Clicks on the dialog element itself (not its content) land on the backdrop around it.
 			onClick={(e) => {
 				if (e.target === e.currentTarget) onClose();
 			}}
-			className="m-auto max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] max-w-140 overflow-hidden rounded-[28px] bg-surface-container-high p-0 text-on-surface shadow-xl backdrop:bg-black/40 open:flex open:flex-col"
+			className={`m-auto max-h-[calc(100svh-2rem)] w-[calc(100%-2rem)] ${size === 'lg' ? 'max-w-3xl' : 'max-w-140'} overflow-hidden rounded-[28px] bg-surface-container-high p-0 text-on-surface shadow-xl backdrop:bg-black/40 open:flex open:flex-col`}
 		>
 			<div className="flex items-start gap-4 px-6 pt-6 pb-4">
 				<div className="min-w-0 flex-1">

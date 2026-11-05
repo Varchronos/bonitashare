@@ -4,6 +4,7 @@ import { formatBytes } from "@bonitashare/shared-types";
 import { getFileLink, getFileVideo } from "../../lib/file";
 import { currentAccount } from "../../lib/account";
 import ReportFile from "../../components/ReportFile";
+import TakedownTool from "../../components/TakedownTool";
 
 const { id } = Astro.params;
 const { data: file, error, cookie } = await getFileLink(Astro, id!);
@@ -68,7 +69,10 @@ const videoClass = `${mediaClass} border border-outline-variant dark:border-0`;
 // under your uploads). Signed in, on the server (lib/visits.ts); anonymous, in this browser's IndexedDB
 // (lib/recent-visits.ts), where a link that no longer works is also dropped. The server leaves those
 // out when it reads the list. The navbar asks for the account anyway, so this costs no extra call.
-const signedIn = Boolean((await currentAccount(Astro))?.email);
+const account = await currentAccount(Astro);
+const signedIn = Boolean(account?.email);
+// The takedown tool at the bottom. The API will check the role again once the tool is wired up.
+const isAdmin = signedIn && account?.role === "admin";
 const visit =
 	file && !file.isOwner
 		? {
@@ -160,6 +164,7 @@ const visit =
 				</>
 			)
 		}
+		{file && isAdmin && <TakedownTool client:idle fileId={id!} filename={file.filename} />}
 	</section>
 	<div
 		id="recent-visit"

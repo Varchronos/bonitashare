@@ -122,4 +122,5 @@ export type Account = {
 
 export * from './tiers.js'
 export * from './reports.js'
+export * from './takedowns.js'
 export * from './utils/byte-conversion.js'
