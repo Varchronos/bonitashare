@@ -9,12 +9,15 @@ import { currentAccount } from "../lib/account";
 import Tooltip from "./Tooltip";
 
 // Signed in means an account with an email; an anonymous session still gets Login and Sign up.
-const signedIn = Boolean((await currentAccount(Astro))?.email);
+const account = await currentAccount(Astro);
+const signedIn = Boolean(account?.email);
+const isAdmin = signedIn && account?.role === "admin";
 
 const links = [
 	{ href: "/", label: "Home" },
 	{ href: "/upload", label: "Uploads" },
 	{ href: "/about", label: "About" },
+	...(isAdmin ? [{ href: "/admin/reports", label: "Reports" }] : []),
 	...(signedIn ? [] : [{ href: "/login", label: "Login" }]),
 ];
 // The end of the bar (and the menu): a filled Sign up button, or once signed in a link to the account

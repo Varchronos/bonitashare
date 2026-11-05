@@ -25,3 +25,43 @@ export type ReportRequest = {
   reason: ReportReason
   details?: string
 }
+
+// GET /admin/reports: the moderation table, one row per reported file.
+export type AdminReportSort = 'newest' | 'oldest'
+
+export type AdminReport = {
+  id: string
+  reason: ReportReason
+  details: string | null
+  status: 'open' | 'actioned' | 'dismissed'
+  // Null once the reporter deleted their account.
+  reporterEmail: string | null
+  createdAt: string
+}
+
+export type AdminReportedFile = {
+  fileId: string
+  // Null once the file itself is gone (purged); reports outlive it.
+  filename: string | null
+  contentType: string | null
+  // Null for anonymous uploads, deleted accounts, and purged files.
+  ownerEmail: string | null
+  // The owner soft-deleted it; it can still come back for a day.
+  deletedByOwner: boolean
+  // Set once moderation has acted on it.
+  takedownState: 'hidden' | 'removed' | 'held' | null
+  reportCount: number
+  openCount: number
+  // How many reports gave each reason, most first.
+  reasons: { reason: ReportReason; count: number }[]
+  firstReportedAt: string
+  lastReportedAt: string
+  // Newest first.
+  reports: AdminReport[]
+}
+
+export type AdminReportPage = {
+  files: AdminReportedFile[]
+  page: number
+  hasNextPage: boolean
+}

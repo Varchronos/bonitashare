@@ -1,0 +1,117 @@
+---
+import Layout from "../../layouts/Layout.astro";
+import ReportFilters from "../../components/admin/ReportFilters.astro";
+import ReportedFilesTable from "../../components/admin/ReportedFilesTable.astro";
+import { refreshSession } from "../../lib/session";
+import { currentAccount } from "../../lib/account";
+import { getReportedFiles } from "../../lib/admin";
+
+// Admins only. Everyone else gets a plain 404, so the page doesn't advertise itself. The API checks the
+// role again on its own; this is only so non-admins never see the shell.
+await refreshSession(Astro);
+const account = await currentAccount(Astro);
+const isAdmin = Boolean(account?.email) && account?.role === "admin";
+
+const params = Astro.url.searchParams;
+const reason = params.get("reason") ?? "";
+const minReports = params.get("minReports") ?? "";
+const sort = params.get("sort") === "oldest" ? "oldest" : "newest";
+
+// Only the filters the API knows, with empty ones dropped, so ?reason=&minReports= stays tidy.
+const query = new URLSearchParams();
+if (reason) query.set("reason", reason);
+if (minReports) query.set("minReports", minReports);
+if (sort !== "newest") query.set("sort", sort);
+const page = Number(params.get("page") ?? "1");
+if (page > 1) query.set("page", String(page));
+
+const result = isAdmin
+	? await getReportedFiles(Astro.locals.sessionCookie ?? "", query)
+	: null;
+if (!isAdmin) Astro.response.status = 404;
+
+const pageHref = (n: number) => {
+	const q = new URLSearchParams(query);
+	if (n > 1) q.set("page", String(n));
+	else q.delete("page");
+	const s = q.toString();
+	return s ? `?${s}` : "?";
+};
+---
+
+<Layout
+	title={isAdmin ? "Reports" : "Page not found"}
+	description="Reported files."
+>
+	<section class="mx-auto w-full max-w-page px-4 py-16 max-[800px]:pt-8">
+		{
+			!isAdmin ? (
+				<>
+					<h1 class="mb-2 text-headline">Page not found</h1>
+					<p class="text-on-surface-variant">
+						There's nothing at this address.
+					</p>
+				</>
+			) : (
+				<>
+					<h1 class="mb-8 text-headline">Reported files</h1>
+
+					<ReportFilters
+						reason={reason}
+						minReports={minReports}
+						sort={sort}
+					/>
+
+					{!result?.data ? (
+						<p
+							role="alert"
+							class="rounded-lg bg-error-container px-4 py-3 text-sm text-on-error-container"
+						>
+							{result?.error?.message ?? "Couldn't load reports."}
+						</p>
+					) : result.data.files.length === 0 ? (
+						<p class="rounded-[28px] bg-surface-container-low px-6 py-10 text-center text-on-surface-variant">
+							{query.toString()
+								? "No reported files match these filters."
+								: "Nothing has been reported yet."}
+						</p>
+					) : (
+						<ReportedFilesTable files={result.data.files} />
+					)}
+
+					{result?.data &&
+						(result.data.page > 1 || result.data.hasNextPage) && (
+							<nav
+								class="mt-6 flex items-center justify-between"
+								aria-label="Pages"
+							>
+								{result.data.page > 1 ? (
+									<a
+										class="btn btn-text"
+										href={pageHref(result.data.page - 1)}
+									>
+										← Previous page
+									</a>
+								) : (
+									<span />
+								)}
+								<span class="text-sm text-on-surface-variant">
+									Page {result.data.page}
+								</span>
+								{result.data.hasNextPage ? (
+									<a
+										class="btn btn-text"
+										href={pageHref(result.data.page + 1)}
+									>
+										Next page →
+									</a>
+								) : (
+									<span />
+								)}
+							</nav>
+						)}
+				</>
+			)
+		}
+	</section>
+</Layout>

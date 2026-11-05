@@ -17,7 +17,7 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.get("/account", async (req, reply): Promise<ApiResponse<Account>> => {
         const userId = req.userId!;
         const [user] = await db
-            .select({ email: users.email, displayName: users.displayName, plan: users.plan, planExpiresAt: users.planExpiresAt })
+            .select({ email: users.email, displayName: users.displayName, role: users.role, plan: users.plan, planExpiresAt: users.planExpiresAt })
             .from(users)
             .where(eq(users.id, userId));
         if (!user) {
@@ -25,7 +25,9 @@ const accountRoutes: FastifyPluginAsync = async (fastify) => {
             return { data: null, error: { message: "No valid session", code: "UNAUTHENTICATED" } };
         }
 
-        return { data: { userId, email: user.email, displayName: user.displayName, tier: tierOf(user) }, error: null };
+        // role is nullable in the schema; anything but 'admin' is an ordinary user. Anonymous users are never admins.
+        const role = user.email && user.role === "admin" ? "admin" : "user";
+        return { data: { userId, email: user.email, displayName: user.displayName, tier: tierOf(user), role }, error: null };
     });
 
     // Served at /api/v1/account (beta): deletes the account for good, right away. Takes the password

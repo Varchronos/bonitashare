@@ -1,0 +1,217 @@
+---
+import { REPORT_REASON_OPTIONS, type AdminReportedFile } from "@bonitashare/shared-types";
+
+interface Props {
+	files: AdminReportedFile[];
+}
+
+// The admin reports page's table: one row per reported file, and under it a row that expands to every report.
+const { files } = Astro.props;
+
+// The share link as anyone would open it, so it can be pasted elsewhere.
+const shareUrl = (fileId: string) => new URL(`/f/${encodeURIComponent(fileId)}`, Astro.url).toString();
+
+const reasonLabel = new Map<string, string>(REPORT_REASON_OPTIONS.map((o) => [o.value, o.label]));
+
+// Formatted on the server in UTC; the script at the bottom rewrites them in the admin's own time zone.
+const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
+const formatDate = (iso: string) => `${dateFormat.format(new Date(iso))} UTC`;
+
+function fileStatus(file: AdminReportedFile): { label: string; tone: "error" | "neutral" } | null {
+	if (!file.filename) return { label: "Purged", tone: "neutral" };
+	if (file.takedownState) return { label: `Taken down: ${file.takedownState}`, tone: "error" };
+	if (file.deletedByOwner) return { label: "Deleted by owner", tone: "neutral" };
+	return null;
+}
+---
+
+<!-- Fixed column widths, so a long name (uploads are often named by hash) wraps in its own column instead of
+     stretching the table. Below the min width the card scrolls sideways rather than squashing columns. -->
+<div class="overflow-x-auto rounded-[28px] bg-surface-container-low">
+	<table class="w-full min-w-225 table-fixed border-collapse text-sm">
+		<colgroup>
+			<col />
+			<col class="w-44" />
+			<col class="w-20" />
+			<col class="w-56" />
+			<col class="w-32" />
+			<col class="w-32" />
+		</colgroup>
+		<thead class="text-xs text-on-surface-variant">
+			<tr>
+				<th scope="col" class="px-4 pt-4 pb-3 text-left font-medium">File</th>
+				<th scope="col" class="px-4 pt-4 pb-3 text-left font-medium">Uploader</th>
+				<th scope="col" class="px-4 pt-4 pb-3 text-right font-medium">Reports</th>
+				<th scope="col" class="px-4 pt-4 pb-3 text-left font-medium">Reasons</th>
+				<th scope="col" class="px-4 pt-4 pb-3 text-left font-medium">Last reported</th>
+				<th scope="col" class="px-4 pt-4 pb-3 text-left font-medium">First reported</th>
+			</tr>
+		</thead>
+		{
+			files.map((file) => {
+				const status = fileStatus(file);
+				return (
+					<tbody class="border-t border-outline-variant">
+						<tr class="align-top">
+							<td class="px-4 pt-3">
+								{file.filename ? (
+									<span class="block font-medium [overflow-wrap:anywhere]">{file.filename}</span>
+								) : (
+									<span class="block text-on-surface-variant italic">File no longer exists</span>
+								)}
+								<dl class="mt-1 flex flex-col text-xs">
+									{file.filename && (
+										<div class="flex min-w-0 items-center gap-2">
+											<dt class="w-7 shrink-0 text-on-surface-variant">Link</dt>
+											<dd class="min-w-0">
+												<a
+													href={shareUrl(file.fileId)}
+													target="_blank"
+													rel="noopener noreferrer"
+													class="block truncate text-primary hover:underline"
+													title={shareUrl(file.fileId)}
+												>
+													{shareUrl(file.fileId)}
+												</a>
+											</dd>
+											<dd>
+												<button
+													type="button"
+													data-copy={shareUrl(file.fileId)}
+													aria-label="Copy link"
+													title="Copy link"
+													class="group icon-btn icon-btn-sm -my-1 text-on-surface-variant"
+												>
+													<svg class="size-4 group-data-copied:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+														<rect x="9" y="9" width="11" height="11" rx="2" />
+														<path d="M5 15V6a2 2 0 0 1 2-2h9" />
+													</svg>
+													<svg class="hidden size-4 text-primary group-data-copied:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+														<path d="m5 12 5 5L20 7" />
+													</svg>
+												</button>
+											</dd>
+										</div>
+									)}
+									<div class="flex min-w-0 items-center gap-2">
+									<dt class="w-7 shrink-0 text-on-surface-variant">ID</dt>
+									<dd class="min-w-0 truncate font-mono text-on-surface-variant">{file.fileId}</dd>
+									<dd>
+										<button
+											type="button"
+											data-copy={file.fileId}
+											aria-label="Copy file ID"
+											title="Copy file ID"
+											class="group icon-btn icon-btn-sm -my-1 text-on-surface-variant"
+										>
+											<svg class="size-4 group-data-copied:hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+												<rect x="9" y="9" width="11" height="11" rx="2" />
+												<path d="M5 15V6a2 2 0 0 1 2-2h9" />
+											</svg>
+											<svg class="hidden size-4 text-primary group-data-copied:block" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+												<path d="m5 12 5 5L20 7" />
+											</svg>
+										</button>
+									</dd>
+									</div>
+								</dl>
+								{status && (
+									<span
+										class:list={[
+											"mt-1.5 inline-block rounded-full px-2 py-0.5 text-xs",
+											status.tone === "error" ? "bg-error-container text-on-error-container" : "bg-surface-container-high text-on-surface-variant",
+										]}
+									>
+										{status.label}
+									</span>
+								)}
+							</td>
+							<td class="px-4 pt-3 [overflow-wrap:anywhere] text-on-surface-variant">
+								{file.ownerEmail ?? <span class="italic">Anonymous or deleted</span>}
+							</td>
+							<td class="px-4 pt-3 text-right">
+								<span class="block text-base leading-5 font-medium">{file.reportCount}</span>
+								<span class="block text-xs text-on-surface-variant">{file.openCount} open</span>
+							</td>
+							<td class="px-4 pt-3">
+								<ul class="flex flex-wrap gap-1">
+									{file.reasons.map((r) => (
+										<li
+											class:list={[
+												"rounded-lg px-2 py-0.5 text-xs",
+												r.reason === "csam" ? "bg-error-container text-on-error-container" : "bg-secondary-container text-on-secondary-container",
+											]}
+										>
+											{reasonLabel.get(r.reason) ?? r.reason} · {r.count}
+										</li>
+									))}
+								</ul>
+							</td>
+							<td class="px-4 pt-3">
+								<time data-local datetime={file.lastReportedAt}>{formatDate(file.lastReportedAt)}</time>
+							</td>
+							<td class="px-4 pt-3 text-on-surface-variant">
+								<time data-local datetime={file.firstReportedAt}>{formatDate(file.firstReportedAt)}</time>
+							</td>
+						</tr>
+						<tr>
+							<td colspan="6" class="px-4 pt-2 pb-3">
+								{file.reports.length > 0 && (
+									<details>
+										<summary class="w-fit cursor-pointer text-xs text-on-surface-variant select-none hover:text-on-surface">
+											{file.reports.length === 1 ? "Show the report" : `Show all ${file.reports.length} reports`}
+										</summary>
+										<ul class="mt-2 flex flex-col gap-2">
+											{file.reports.map((r) => (
+												<li class="rounded-xl bg-surface-container px-4 py-3">
+													<div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-on-surface-variant">
+														<span class="font-medium text-on-surface">{reasonLabel.get(r.reason) ?? r.reason}</span>
+														<span class="[overflow-wrap:anywhere]">{r.reporterEmail ?? "Deleted account"}</span>
+														<time data-local datetime={r.createdAt}>{formatDate(r.createdAt)}</time>
+														<span class="rounded-full bg-surface-container-high px-2 py-0.5">{r.status}</span>
+													</div>
+													{r.details ? (
+														<p class="mt-1 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]">{r.details}</p>
+													) : (
+														<p class="mt-1 text-sm text-on-surface-variant italic">No details given.</p>
+													)}
+												</li>
+											))}
+										</ul>
+									</details>
+								)}
+							</td>
+						</tr>
+					</tbody>
+				);
+			})
+		}
+	</table>
+</div>
+
+<script>
+	// Times in the admin's own zone; the server rendered them in UTC.
+	const format = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+	for (const el of document.querySelectorAll<HTMLTimeElement>("time[data-local]")) {
+		el.textContent = format.format(new Date(el.dateTime));
+	}
+
+	// Copy buttons: the value is in data-copy. The icon turns into a tick for a moment once it's copied.
+	document.addEventListener("click", async (event) => {
+		const button = (event.target as Element).closest<HTMLButtonElement>("button[data-copy]");
+		if (!button) return;
+		try {
+			await navigator.clipboard.writeText(button.dataset.copy!);
+		} catch {
+			// Denied or not a secure context; the value is still on screen to select by hand.
+			return;
+		}
+		const label = button.getAttribute("aria-label");
+		button.dataset.copied = "";
+		button.setAttribute("aria-label", "Copied");
+		setTimeout(() => {
+			delete button.dataset.copied;
+			if (label) button.setAttribute("aria-label", label);
+		}, 1500);
+	});
+</script>
