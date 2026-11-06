@@ -1,8 +1,9 @@
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest } from 'fastify';
-import type { ApiResponse } from '@bonitashare/shared-types';
+import type { ApiResponse, FileTakedown } from '@bonitashare/shared-types';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { fileVideos, files, notDeleted } from '@bonitashare/core/db';
+import { fileTakedowns, fileVideos, files, notDeleted } from '@bonitashare/core/db';
+import { isAdminUser } from '@/plugins/custom/handleSession.js';
 import { BUCKET } from '@bonitashare/core/storage';
 import { hlsUrl, publicStorage, thumbUrl } from '@/storage/client.js';
 
@@ -20,6 +21,8 @@ type FileLink = {
     sizeBytes: number;
     // Whether the viewer uploaded it. The share page keeps a recently-viewed list of other people's files.
     isOwner: boolean;
+    // Only the owner and admins are told; anyone else can't open a taken-down file at all.
+    takedown: FileTakedown | null;
 };
 
 type FileVideo = {
@@ -35,10 +38,22 @@ type FileVideo = {
 // so callers just return what this gives back when there's no file.
 async function findServableFile(req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) {
     // Soft-deleted files 404 for everyone, the owner included; they're restored from the deleted list.
-    const [file] = await db.select().from(files).where(and(eq(files.id, req.params.id), notDeleted()));
+    const [row] = await db
+        .select({
+            file: files,
+            takedownState: fileTakedowns.state,
+            takedownReason: fileTakedowns.reason,
+            purgeContentAfter: fileTakedowns.purgeContentAfter,
+            contentPurgedAt: fileTakedowns.contentPurgedAt,
+        })
+        .from(files)
+        .leftJoin(fileTakedowns, eq(fileTakedowns.fileId, files.id))
+        .where(and(eq(files.id, req.params.id), notDeleted()));
+    const file = row?.file;
+    const isOwner = !!file && req.userId !== null && file.ownerId === req.userId;
 
     // Same 404 for missing/private/unowned — don't reveal that a private file exists.
-    if (!file || file.fileStatus !== 'uploaded' || (!file.isPublic && file.ownerId !== req.userId)) {
+    if (!file || file.fileStatus !== 'uploaded' || (!file.isPublic && !isOwner)) {
         reply.code(404);
         return { file: null, failure: { data: null, error: { message: 'File not found', code: 'FILE_NOT_FOUND' } } } as const;
     }
@@ -48,7 +63,24 @@ async function findServableFile(req: FastifyRequest<{ Params: { id: string } }>,
         return { file: null, failure: { data: null, error: { message: 'File has expired', code: 'FILE_EXPIRED' } } } as const;
     }
 
-    return { file, failure: null } as const;
+    // Taken down: hidden files stay open to their owner and admins, removed and held ones to admins only,
+    // and once a removed file's content is purged there's nothing left for anyone.
+    let takedown: FileTakedown | null = null;
+    if (row.takedownState) {
+        const allowed =
+            !row.contentPurgedAt && ((row.takedownState === 'hidden' && isOwner) || (await isAdminUser(req.userId)));
+        if (!allowed) {
+            reply.code(410);
+            return { file: null, failure: { data: null, error: { message: 'This file was taken down', code: 'FILE_TAKEN_DOWN' } } } as const;
+        }
+        takedown = {
+            state: row.takedownState,
+            reason: row.takedownReason!,
+            purgeContentAfter: row.purgeContentAfter?.toISOString() ?? null,
+        };
+    }
+
+    return { file, isOwner, takedown, failure: null } as const;
 }
 
 // Storage only knows the object key (uploads/<id>), so without this a saved file is named after the
@@ -71,7 +103,7 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.addHook('onRequest', fastify.optionalSession);
 
     fastify.get<{ Params: { id: string } }>('/download/:id', async (req, reply): Promise<ApiResponse<FileLink>> => {
-        const { file, failure } = await findServableFile(req, reply);
+        const { file, isOwner, takedown, failure } = await findServableFile(req, reply);
         if (!file) return failure;
 
         // With S3_REGION set, signing is local (no request to storage), so two URLs cost nothing extra.
@@ -95,7 +127,8 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
                 filename: file.filename,
                 contentType: file.contentType,
                 sizeBytes: file.sizeBytes,
-                isOwner: req.userId !== null && file.ownerId === req.userId,
+                isOwner,
+                takedown,
             },
             error: null,
         };

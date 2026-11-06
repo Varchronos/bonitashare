@@ -5,8 +5,8 @@ import { files, users } from "../schema.js";
 
 export const REPORT_REASONS = ['csam', 'illegal', 'copyright', 'nudity', 'harassment', 'malware', 'spam', 'other'] as const;
 const REPORT_STATUSES = ['open', 'actioned', 'dismissed'] as const;
-const TAKEDOWN_STATES = ['hidden', 'removed', 'held'] as const;
-const TAKEDOWN_SOURCES = ['report', 'auto', 'admin', 'legal', 'copyright'] as const;
+export const TAKEDOWN_STATES = ['hidden', 'removed', 'held'] as const;
+export const TAKEDOWN_SOURCES = ['report', 'auto', 'admin', 'legal', 'copyright'] as const;
 const TAKEDOWN_ACTIONS = ['hide', 'remove', 'hold', 'release', 'dismiss', 'appeal', 'purge_content'] as const;
 
 // drizzle's text enums are only checked in TypeScript; this makes the database reject other values too.
@@ -79,3 +79,9 @@ export const takedownEvents = pgTable('takedown_events', {
     check('takedown_events_action_valid', oneOf(table.action, TAKEDOWN_ACTIONS)),
     index('takedown_events_file_idx').on(table.fileId, table.at),
 ]);
+
+// For a WHERE over files: true when moderation hasn't taken the file down in any state. Like notDeleted,
+// an anti-join on the primary key. Anything shown to the public (share links, "Shared with you",
+// reporting) uses this; the owner's and admins' own views check the state themselves.
+export const notTakenDown = () =>
+    sql`NOT EXISTS (SELECT 1 FROM ${fileTakedowns} WHERE ${fileTakedowns.fileId} = ${files.id})`;

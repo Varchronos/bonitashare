@@ -1,18 +1,63 @@
 import type { FastifyPluginAsync } from "fastify";
-import type { AdminReport, AdminReportPage, AdminReportSort, ApiFailure, ApiResponse, ReportReason } from "@bonitashare/shared-types";
+import {
+    TAKEDOWN_PURGE_OPTIONS,
+    TAKEDOWN_SOURCE_OPTIONS,
+    type AdminReport,
+    type AdminReportPage,
+    type AdminReportSort,
+    type ApiFailure,
+    type ApiResponse,
+    type FileTakedown,
+    type ManualTakedownSource,
+    type ReportReason,
+    type TakedownPurge,
+    type TakedownState,
+} from "@bonitashare/shared-types";
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { REPORT_REASONS, fileDeletions, fileTakedowns, files, reports, users } from "@bonitashare/core/db";
+import {
+    REPORT_REASONS,
+    TAKEDOWN_STATES,
+    fileDeletions,
+    fileTakedowns,
+    fileVideos,
+    files,
+    reports,
+    takedownEvents,
+    users,
+} from "@bonitashare/core/db";
+import { HLS_BUCKET, THUMB_BUCKET, listKeys, removeObjects } from "@bonitashare/core/storage";
+import { PURGE_TAKEDOWN_CONTENT_JOB } from "@bonitashare/core/queue";
 import { db } from "@/db/client.js";
+import { storage } from "@/storage/client.js";
+import { fileProcessingQueue } from "@/queue/client.js";
 
 const PAGE_SIZE = 50;
 const MAX_PAGE = 1000;
 const MAX_MIN_REPORTS = 10_000;
 
 const isReason = (value: string): value is ReportReason => (REPORT_REASONS as readonly string[]).includes(value);
+const oneOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
+    typeof value === "string" && (values as readonly string[]).includes(value);
+
+const MANUAL_SOURCES = TAKEDOWN_SOURCE_OPTIONS.map((o) => o.value);
+const PURGE_CHOICES = TAKEDOWN_PURGE_OPTIONS.map((o) => o.value);
+// Grace period for a removed file before its original is deleted, for appeals.
+const PURGE_DELAY = sql`interval '30 days'`;
+
+// The event logged for each state an admin sets.
+const ACTION_FOR_STATE = { hidden: "hide", removed: "remove", held: "hold" } as const satisfies Record<TakedownState, string>;
+
+// Thrown inside the takedown transaction to roll it back and answer with this failure.
+class TakedownRefused extends Error {
+    constructor(readonly status: number, readonly failure: ApiFailure) {
+        super(failure.error.message);
+    }
+}
 
 const fail = (code: string, message: string): ApiFailure => ({ data: null, error: { code, message } });
 
 type Query = { reason?: string; minReports?: string; sort?: string; page?: string };
+type TakedownBody = { state?: unknown; reason?: unknown; source?: unknown; purge?: unknown };
 
 const adminRoutes: FastifyPluginAsync = async (fastify) => {
     fastify.addHook("onRequest", fastify.requireAdmin);
@@ -121,6 +166,137 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
             error: null,
         };
     });
+
+    // Served at /api/v1/admin/files/:id/takedown: a manual takedown, or a change to an existing one.
+    //   hidden:  only the owner and admins can open it; nothing is deleted.
+    //   removed: only admins can open it; the worker deletes its content once purge_content_after passes.
+    //   held:    only admins can open it, and it's never purged; its thumbnail and HLS output are deleted now.
+    // Any open reports on the file are marked actioned. The files row always stays: file_takedowns
+    // references it, and the purge sweeps skip taken-down files.
+    fastify.post<{ Params: { id: string }; Body: TakedownBody }>(
+        "/admin/files/:id/takedown",
+        async (req, reply): Promise<ApiResponse<FileTakedown>> => {
+            const adminId = req.userId!;
+            const fileId = req.params.id;
+            const { state, reason, source, purge } = req.body ?? {};
+
+            if (!oneOf(TAKEDOWN_STATES, state)) {
+                reply.code(400);
+                return fail("INVALID_STATE", "state must be hidden, removed or held");
+            }
+            if (!oneOf(REPORT_REASONS, reason)) {
+                reply.code(400);
+                return fail("INVALID_REASON", "Unknown reason");
+            }
+            if (!oneOf<ManualTakedownSource>(MANUAL_SOURCES, source)) {
+                reply.code(400);
+                return fail("INVALID_SOURCE", "source must be admin, legal or copyright");
+            }
+            if (state === "removed" && !oneOf<TakedownPurge>(PURGE_CHOICES, purge)) {
+                reply.code(400);
+                return fail("INVALID_PURGE", "purge must be immediate or 30d for a removed file");
+            }
+
+            let takedown: FileTakedown;
+            try {
+                takedown = await db.transaction(async (tx) => {
+                    // Locks the file, so two admins acting at once go one after the other.
+                    const [file] = await tx
+                        .select({
+                            id: files.id,
+                            ownerId: files.ownerId,
+                            ownerEmail: users.email,
+                            thumbKey: files.thumbKey,
+                            hlsPrefix: fileVideos.hlsPrefix,
+                        })
+                        .from(files)
+                        .leftJoin(users, eq(users.id, files.ownerId))
+                        .leftJoin(fileVideos, eq(fileVideos.fileId, files.id))
+                        .where(eq(files.id, fileId))
+                        .for("update", { of: files });
+                    if (!file) throw new TakedownRefused(404, fail("FILE_NOT_FOUND", "File not found"));
+
+                    const [current] = await tx
+                        .select({ contentPurgedAt: fileTakedowns.contentPurgedAt })
+                        .from(fileTakedowns)
+                        .where(eq(fileTakedowns.fileId, fileId));
+                    if (current?.contentPurgedAt) {
+                        throw new TakedownRefused(409, fail("CONTENT_PURGED", "This file's content has already been deleted"));
+                    }
+
+                    // Held: the original stays as evidence, but the derived copies go. Storage first, inside the
+                    // transaction, so a failed delete rolls everything back and the admin can retry.
+                    if (state === "held") {
+                        if (file.thumbKey) await removeObjects(storage, THUMB_BUCKET, [file.thumbKey]);
+                        if (file.hlsPrefix) await removeObjects(storage, HLS_BUCKET, await listKeys(storage, HLS_BUCKET, `${file.hlsPrefix}/`));
+                        await tx.update(files).set({ thumbKey: null }).where(eq(files.id, fileId));
+                        await tx.delete(fileVideos).where(eq(fileVideos.fileId, fileId));
+                    }
+
+                    const purgeContentAfter =
+                        state === "removed" ? (purge === "immediate" ? sql`now()` : sql`now() + ${PURGE_DELAY}`) : null;
+
+                    const [row] = await tx
+                        .insert(fileTakedowns)
+                        .values({
+                            fileId,
+                            state,
+                            reason,
+                            source,
+                            ownerIdSnapshot: file.ownerId,
+                            ownerEmailSnapshot: file.ownerEmail,
+                            purgeContentAfter,
+                        })
+                        .onConflictDoUpdate({
+                            target: fileTakedowns.fileId,
+                            set: {
+                                state,
+                                reason,
+                                source,
+                                purgeContentAfter,
+                                updatedAt: sql`now()`,
+                                // Keep the first snapshot: by a later change the owner may have deleted their account.
+                                ownerIdSnapshot: sql`coalesce(${fileTakedowns.ownerIdSnapshot}, excluded.owner_id_snapshot)`,
+                                ownerEmailSnapshot: sql`coalesce(${fileTakedowns.ownerEmailSnapshot}, excluded.owner_email_snapshot)`,
+                            },
+                        })
+                        .returning({ state: fileTakedowns.state, reason: fileTakedowns.reason, purgeContentAfter: fileTakedowns.purgeContentAfter });
+
+                    await tx.insert(takedownEvents).values({
+                        fileId,
+                        action: ACTION_FOR_STATE[state],
+                        actorId: adminId,
+                        note: `reason=${reason} source=${source}${state === "removed" ? ` purge=${purge}` : ""}`,
+                    });
+
+                    await tx
+                        .update(reports)
+                        .set({ status: "actioned", resolvedAt: sql`now()`, resolvedBy: adminId })
+                        .where(and(eq(reports.fileId, fileId), eq(reports.status, "open")));
+
+                    return { ...row!, purgeContentAfter: row!.purgeContentAfter?.toISOString() ?? null };
+                });
+            } catch (err) {
+                if (err instanceof TakedownRefused) {
+                    reply.code(err.status);
+                    return err.failure;
+                }
+                req.log.error({ err, fileId }, "takedown failed");
+                reply.code(502);
+                return fail("TAKEDOWN_FAILED", "Couldn't apply the takedown. Nothing was changed; try again.");
+            }
+
+            // An immediate purge shouldn't wait up to a whole sweep interval. If this add is lost, the
+            // scheduled sweep picks the file up anyway.
+            if (state === "removed" && purge === "immediate") {
+                await fileProcessingQueue
+                    .add(PURGE_TAKEDOWN_CONTENT_JOB, {}, { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } })
+                    .catch((err) => req.log.warn({ err }, "could not start the takedown purge early"));
+            }
+
+            return { data: takedown, error: null };
+        },
+    );
 };
 
 export default adminRoutes;

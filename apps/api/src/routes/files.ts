@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import { quotaMessages, type ApiResponse, type DeletedFile, type FilePage } from '@bonitashare/shared-types';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
-import { fileDeletions, fileVideos, files, notDeleted } from '@bonitashare/core/db';
+import { fileDeletions, fileTakedowns, fileVideos, files, notDeleted } from '@bonitashare/core/db';
 import { TRANSCODE_HLS_JOB, restoreTranscodeJobId } from '@bonitashare/core/queue';
 import { thumbUrl } from '@/storage/client.js';
 import { videoProcessingQueue } from '@/queue/client.js';
@@ -18,6 +18,11 @@ const RESTORE_WINDOW = sql`interval '1 day'`;
 const MAX_DELETED_LISTED = 200;
 
 const notFound = { data: null, error: { message: 'File not found', code: 'FILE_NOT_FOUND' } } as const;
+
+// Taken down as removed or held: out of the owner's hands entirely, so off their lists and beyond delete
+// or restore. Hidden ones stay: the owner can still see them (the share page says they're taken down).
+const ownerCanManage = () =>
+    sql`NOT EXISTS (SELECT 1 FROM ${fileTakedowns} WHERE ${fileTakedowns.fileId} = ${files.id} AND ${fileTakedowns.state} <> 'hidden')`;
 
 // Expiring files (anonymous uploads) never outlive their expiry by being deleted.
 const notExpired = () => or(isNull(files.expiresAt), gt(files.expiresAt, sql`now()`));
@@ -75,6 +80,7 @@ const fileRoutes: FastifyPluginAsync = async (fastify) => {
                     eq(files.fileStatus, 'uploaded'),
                     notExpired(),
                     notDeleted(),
+                    ownerCanManage(),
                     cursor ? sql`(${files.uploadedAt}, ${files.id}) < (${cursor[0]}::timestamptz, ${cursor[1]})` : undefined,
                 ),
             )
@@ -110,7 +116,7 @@ const fileRoutes: FastifyPluginAsync = async (fastify) => {
             .select({ id: files.id, expiresAt: files.expiresAt })
             .from(files)
             // Unfinished uploads are cancelled through tus instead, which also releases the reservation.
-            .where(and(eq(files.id, req.params.id), eq(files.ownerId, userId), eq(files.fileStatus, 'uploaded')));
+            .where(and(eq(files.id, req.params.id), eq(files.ownerId, userId), eq(files.fileStatus, 'uploaded'), ownerCanManage()));
         // Someone else's file answers the same as a missing one, so ids can't be probed for existence.
         if (!file) {
             reply.code(404);
@@ -146,7 +152,7 @@ const fileRoutes: FastifyPluginAsync = async (fastify) => {
             // Past purge_after it can't be restored any more, even if the sweep hasn't reached it yet.
             // Expiry is checked again here and on restore, not just trusted from purge_after: an expiry
             // that changes after the delete (cleared on signup, say) doesn't move purge_after with it.
-            .where(and(eq(files.ownerId, userId), gt(fileDeletions.purgeAfter, sql`now()`), notExpired()))
+            .where(and(eq(files.ownerId, userId), gt(fileDeletions.purgeAfter, sql`now()`), notExpired(), ownerCanManage()))
             .orderBy(desc(fileDeletions.deletedAt))
             .limit(MAX_DELETED_LISTED);
 
@@ -175,7 +181,7 @@ const fileRoutes: FastifyPluginAsync = async (fastify) => {
                 .select({ id: files.id, sizeBytes: files.sizeBytes, expiresAt: files.expiresAt })
                 .from(fileDeletions)
                 .innerJoin(files, eq(files.id, fileDeletions.fileId))
-                .where(and(eq(files.id, req.params.id), eq(files.ownerId, userId), gt(fileDeletions.purgeAfter, sql`now()`)))
+                .where(and(eq(files.id, req.params.id), eq(files.ownerId, userId), gt(fileDeletions.purgeAfter, sql`now()`), ownerCanManage()))
                 // Holds off a purge that's about to start on it until this commits.
                 .for('update');
             if (!file) return 'not-found' as const;

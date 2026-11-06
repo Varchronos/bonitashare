@@ -25,3 +25,19 @@ export const TAKEDOWN_PURGE_OPTIONS = [
 ] as const
 
 export type TakedownPurge = (typeof TAKEDOWN_PURGE_OPTIONS)[number]['value']
+
+// POST /admin/files/:id/takedown body. purge only counts for 'removed', and is required then.
+export type TakedownRequest = {
+  state: TakedownState
+  reason: import('./reports.js').ReportReason
+  source: ManualTakedownSource
+  purge?: TakedownPurge
+}
+
+// A file's takedown as the owner and admins see it (on the share page, and as the takedown route's answer).
+export type FileTakedown = {
+  state: TakedownState
+  reason: import('./reports.js').ReportReason
+  // When a removed file's original is deleted; null for hidden and held.
+  purgeContentAfter: string | null
+}

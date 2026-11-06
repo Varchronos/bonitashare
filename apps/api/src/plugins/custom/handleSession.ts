@@ -57,6 +57,17 @@ export async function findSession(req: FastifyRequest): Promise<Session | null> 
     return token ? sessionByToken(token) : null;
 }
 
+// A signed-in account with role 'admin'. Read fresh each time rather than kept in the session, so taking
+// the role away works at once.
+export async function isAdminUser(userId: string | null): Promise<boolean> {
+    if (!userId) return false;
+    const [admin] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.role, "admin"), isNotNull(users.email)));
+    return !!admin;
+}
+
 export function isActive(session: Session) {
     return session.expiresAt > new Date();
 }
@@ -169,16 +180,11 @@ const handleSession: FastifyPluginAsync = async (fastify) => {
         if (denied) return denied;
     });
 
-    // The role is read on every request rather than kept in the session, so taking it away works at once.
     fastify.decorate("requireAdmin", async (req: FastifyRequest, rep: FastifyReply) => {
         const denied = await checkSession(req, rep);
         if (denied) return denied;
 
-        const [admin] = await db
-            .select({ id: users.id })
-            .from(users)
-            .where(and(eq(users.id, req.userId!), eq(users.role, "admin"), isNotNull(users.email)));
-        if (!admin) {
+        if (!(await isAdminUser(req.userId))) {
             const body: ApiFailure = { data: null, error: { message: "Admins only", code: "FORBIDDEN" } };
             return rep.code(403).send(body);
         }

@@ -1,16 +1,17 @@
 ---
 import Layout from "../../layouts/Layout.astro";
-import { formatBytes } from "@bonitashare/shared-types";
+import { REPORT_REASON_OPTIONS, TAKEDOWN_STATE_OPTIONS, formatBytes } from "@bonitashare/shared-types";
 import { getFileLink, getFileVideo } from "../../lib/file";
 import { currentAccount } from "../../lib/account";
 import ReportFile from "../../components/ReportFile";
 import TakedownTool from "../../components/TakedownTool";
+import warningIcon from "../../assets/warning.svg?raw";
 
 const { id } = Astro.params;
 const { data: file, error, cookie } = await getFileLink(Astro, id!);
 
 if (!file) {
-	Astro.response.status = error?.code === "FILE_EXPIRED" ? 410 : 404;
+	Astro.response.status = error?.code === "FILE_EXPIRED" || error?.code === "FILE_TAKEN_DOWN" ? 410 : 404;
 }
 
 const isImage = file?.contentType?.startsWith("image/") ?? false;
@@ -50,7 +51,9 @@ const description = file
 	? `${kind} shared on bonitashare · ${formatBytes(file.sizeBytes)}${file.contentType ? ` · ${file.contentType}` : ""}`
 	: error?.code === "FILE_EXPIRED"
 		? "This file has expired and is no longer available."
-		: "This file doesn't exist or isn't available.";
+		: error?.code === "FILE_TAKEN_DOWN"
+			? "This file was taken down and is no longer available."
+			: "This file doesn't exist or isn't available.";
 
 // Capped at 75% of the screen's height so a portrait image or video fits without scrolling; it then
 // narrows to keep its shape (object-contain covers anything that doesn't match exactly) and centres.
@@ -73,8 +76,13 @@ const account = await currentAccount(Astro);
 const signedIn = Boolean(account?.email);
 // The takedown tool at the bottom. The API will check the role again once the tool is wired up.
 const isAdmin = signedIn && account?.role === "admin";
+
+const takedownLabel = file?.takedown ? TAKEDOWN_STATE_OPTIONS.find((o) => o.value === file.takedown!.state)?.label.toLowerCase() : null;
+const takedownReason = file?.takedown
+	? (REPORT_REASON_OPTIONS.find((o) => o.value === file.takedown!.reason)?.label ?? file.takedown.reason).toLowerCase()
+	: null;
 const visit =
-	file && !file.isOwner
+	file && !file.isOwner && !file.takedown
 		? {
 				id: id!,
 				filename: file.filename,
@@ -90,6 +98,29 @@ const visit =
 		{
 			file ? (
 				<>
+					{file.takedown && (
+						<p role="status" class="mb-6 flex items-start gap-2 rounded-lg bg-error-container px-4 py-3 text-sm text-on-error-container">
+							<span aria-hidden="true" class="mt-0.5 inline-flex shrink-0 [&>svg]:size-4 [&>svg]:fill-current" set:html={warningIcon} />
+							<span>
+								{isAdmin ? (
+									<>
+										Taken down: <strong>{takedownLabel}</strong> for {takedownReason}.
+										{file.takedown.state === "removed" && file.takedown.purgeContentAfter && (
+											<>
+												{" "}The content is deleted after{" "}
+												<time data-local datetime={file.takedown.purgeContentAfter}>{new Date(file.takedown.purgeContentAfter).toUTCString()}</time>.
+											</>
+										)}
+										{" "}Only admins{file.takedown.state === "hidden" ? " and the uploader" : ""} can open it.
+									</>
+								) : (
+									<>
+										This file was taken down for {takedownReason}. Only you can still open it; anyone else with the link is told it was taken down.
+									</>
+								)}
+							</span>
+						</p>
+					)}
 					<h1 class="mb-2 text-headline wrap-break-word">{file.filename}</h1>
 					<p class="mb-6 text-sm text-on-surface-variant">
 						{formatBytes(file.sizeBytes)}
@@ -146,7 +177,7 @@ const visit =
 							</svg>
 							Download file
 						</a>
-						{!file.isOwner && <ReportFile client:idle fileId={id!} filename={file.filename} signedIn={signedIn} />}
+						{!file.isOwner && !file.takedown && <ReportFile client:idle fileId={id!} filename={file.filename} signedIn={signedIn} />}
 					</div>
 				</>
 			) : (
@@ -154,17 +185,21 @@ const visit =
 					<h1 class="mb-2 text-headline">
 						{error?.code === "FILE_EXPIRED"
 							? "This link has expired"
-							: "File not found"}
+							: error?.code === "FILE_TAKEN_DOWN"
+								? "This file was taken down"
+								: "File not found"}
 					</h1>
 					<p class="mb-6 text-sm text-on-surface-variant">
 						{error?.code === "FILE_EXPIRED"
 							? "The file this link pointed to is no longer available."
-							: "This link doesn't point to a file we have — check that you copied it correctly."}
+							: error?.code === "FILE_TAKEN_DOWN"
+								? "It broke our rules or was taken down on request, so it's no longer available."
+								: "This link doesn't point to a file we have — check that you copied it correctly."}
 					</p>
 				</>
 			)
 		}
-		{file && isAdmin && <TakedownTool client:idle fileId={id!} filename={file.filename} />}
+		{file && isAdmin && <TakedownTool client:idle fileId={id!} filename={file.filename} currentState={file.takedown?.state ?? null} defaultReason={file.takedown?.reason ?? null} />}
 	</section>
 	<div
 		id="recent-visit"
@@ -178,6 +213,12 @@ const visit =
 <script>
 	import { recordVisit, removeVisit } from "../../lib/recent-visits";
 	import { recordRemoteVisit } from "../../lib/visits";
+
+	// Admin notice times, in the viewer's own time zone (the server rendered them in UTC).
+	const localTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+	for (const el of document.querySelectorAll<HTMLTimeElement>("time[data-local]")) {
+		el.textContent = localTime.format(new Date(el.dateTime));
+	}
 
 	const recent = document.getElementById("recent-visit")?.dataset;
 	// Not awaited: the player below shouldn't wait on the list, and failing (private window, offline) is fine.

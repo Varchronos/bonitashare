@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import { and, eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import { createDb, fileDeletions, fileVideos, files } from '@bonitashare/core/db';
+import { createDb, fileDeletions, fileTakedowns, fileVideos, files } from '@bonitashare/core/db';
 import { BUCKET, HLS_BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
 import {
     VIDEO_PROCESSING_QUEUE,
@@ -294,14 +294,19 @@ async function uploadHls(outDir: string, hlsPrefix: string): Promise<number> {
 
 const formatMs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
 
-// Soft-deleted, or already purged. Either way its output would only be thrown away.
+// Moderation states whose files get no HLS: held ones had theirs deleted on purpose, removed ones are
+// on their way out.
+const NO_STREAM_TAKEDOWNS = new Set(['held', 'removed']);
+
+// Soft-deleted, already purged, or taken down as held or removed. Any way, its output would only be thrown away.
 async function isDeleted(fileId: string): Promise<boolean> {
     const [row] = await db
-        .select({ id: files.id, deletedAt: fileDeletions.deletedAt })
+        .select({ id: files.id, deletedAt: fileDeletions.deletedAt, takedownState: fileTakedowns.state })
         .from(files)
         .leftJoin(fileDeletions, eq(fileDeletions.fileId, files.id))
+        .leftJoin(fileTakedowns, eq(fileTakedowns.fileId, files.id))
         .where(eq(files.id, fileId));
-    return !row || row.deletedAt !== null;
+    return !row || row.deletedAt !== null || (row.takedownState !== null && NO_STREAM_TAKEDOWNS.has(row.takedownState));
 }
 
 async function transcodeHls(job: Job<TranscodeHlsJob>) {
@@ -316,10 +321,12 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
             sizeBytes: files.sizeBytes,
             thumbKey: files.thumbKey,
             deletedAt: fileDeletions.deletedAt,
+            takedownState: fileTakedowns.state,
         })
         .from(fileVideos)
         .innerJoin(files, eq(files.id, fileVideos.fileId))
         .leftJoin(fileDeletions, eq(fileDeletions.fileId, fileVideos.fileId))
+        .leftJoin(fileTakedowns, eq(fileTakedowns.fileId, fileVideos.fileId))
         .where(eq(fileVideos.fileId, fileId));
     // Purged or expired since enqueue (the cascade took the video row too), or a duplicate run of a
     // job that already finished: either way there's nothing to do.
@@ -330,6 +337,10 @@ async function transcodeHls(job: Job<TranscodeHlsJob>) {
     // Soft-deleted: the row stays 'pending', which is what tells a restore to queue this again.
     if (video.deletedAt) {
         log('deleted, skipping until restored');
+        return;
+    }
+    if (video.takedownState && NO_STREAM_TAKEDOWNS.has(video.takedownState)) {
+        log(`taken down (${video.takedownState}), skipping`);
         return;
     }
     log(`started (attempt ${job.attemptsMade + 1}), source ${(video.sizeBytes / 1024 ** 2).toFixed(1)} MiB`);

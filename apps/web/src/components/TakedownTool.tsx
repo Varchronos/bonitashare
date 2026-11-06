@@ -7,9 +7,29 @@ import {
 	type ManualTakedownSource,
 	type ReportReason,
 	type TakedownPurge,
+	type ApiResponse,
+	type FileTakedown,
+	type TakedownRequest,
 	type TakedownState,
 } from '@bonitashare/shared-types';
 import Modal from './Modal';
+import { useAsyncAction } from '../hooks/useAsyncAction';
+
+async function sendTakedown({ fileId, request }: { fileId: string; request: TakedownRequest }): Promise<FileTakedown> {
+	let body: ApiResponse<FileTakedown> | null;
+	try {
+		const res = await fetch(`/api/v1/admin/files/${encodeURIComponent(fileId)}/takedown`, {
+			method: 'POST',
+			headers: { 'content-type': 'application/json' },
+			body: JSON.stringify(request),
+		});
+		body = (await res.json().catch(() => null)) as ApiResponse<FileTakedown> | null;
+		if (res.ok && body?.data) return body.data;
+	} catch {
+		throw new Error("Couldn't reach the server. Check your connection and try again.");
+	}
+	throw new Error(body?.error?.message ?? "Couldn't apply the takedown. Try again.");
+}
 
 export const takedownStateLabel = (value: TakedownState | null) =>
 	value ? TAKEDOWN_STATE_OPTIONS.find((o) => o.value === value)!.label : 'Live';
@@ -35,14 +55,13 @@ type Props = {
 };
 
 // The takedown form itself, shared by the share page's card (TakedownTool) and the reports table's
-// pop-up (TakedownButton). Admins only. UI only for now: confirming doesn't call the API yet.
+// pop-up (TakedownButton). Admins only; the API checks the role again.
 export function TakedownForm({ fileId, filename, currentState = null, defaultReason = null }: Props) {
 	const [state, setState] = useState<TakedownState>('hidden');
 	const [reason, setReason] = useState<ReportReason | ''>(defaultReason ?? '');
 	const [source, setSource] = useState<ManualTakedownSource>('admin');
 	const [purge, setPurge] = useState<TakedownPurge>('30d');
 	const [confirming, setConfirming] = useState(false);
-	const [notice, setNotice] = useState<string | null>(null);
 
 	const stateLabel = takedownStateLabel;
 	const reasonLabel = REPORT_REASON_OPTIONS.find((o) => o.value === reason)?.label;
@@ -54,13 +73,21 @@ export function TakedownForm({ fileId, filename, currentState = null, defaultRea
 	function submit(event: FormEvent) {
 		event.preventDefault();
 		if (!ready) return;
-		setNotice(null);
 		setConfirming(true);
 	}
 
+	const takedown = useAsyncAction({
+		triggerFn: sendTakedown,
+		// The page is rendered on the server from the file's takedown, so reloading is what shows the new state
+		// everywhere (status badge, notices, the reports table's row).
+		onSuccess: () => location.reload(),
+	});
+
 	function confirm() {
-		setConfirming(false);
-		setNotice("Takedowns aren't connected to the server yet, so nothing was changed.");
+		takedown.trigger({
+			fileId,
+			request: { state, reason: reason as ReportReason, source, ...(state === 'removed' ? { purge } : {}) },
+		});
 	}
 
 	return (
@@ -161,11 +188,6 @@ export function TakedownForm({ fileId, filename, currentState = null, defaultRea
 					{state !== 'removed' && <p className="mt-1.5 text-xs text-on-surface-variant">Only removed files are purged.</p>}
 				</fieldset>
 
-				{notice && (
-					<p role="status" className="rounded-lg bg-warning-container px-3 py-2 text-sm text-on-warning-container">
-						{notice}
-					</p>
-				)}
 
 				<div className="flex justify-end">
 					<button type="submit" disabled={!ready} className="btn bg-error text-surface not-disabled:hover:shadow-sm disabled:opacity-50">
@@ -203,12 +225,22 @@ export function TakedownForm({ fileId, filename, currentState = null, defaultRea
 						The original will be deleted at the next sweep. This can't be undone.
 					</p>
 				)}
+				{takedown.error && (
+					<p role="alert" className="mb-6 text-sm text-error">
+						{takedown.error.message}
+					</p>
+				)}
 				<div className="flex justify-end gap-3">
-					<button type="button" className="btn btn-text" onClick={() => setConfirming(false)}>
+					<button type="button" className="btn btn-text" disabled={takedown.isPending} onClick={() => setConfirming(false)}>
 						Cancel
 					</button>
-					<button type="button" className="btn bg-error text-surface not-disabled:hover:shadow-sm" onClick={confirm}>
-						Confirm
+					<button
+						type="button"
+						className="btn bg-error text-surface not-disabled:hover:shadow-sm disabled:cursor-progress disabled:opacity-70"
+						disabled={takedown.isPending || takedown.isSuccess}
+						onClick={confirm}
+					>
+						{takedown.isPending || takedown.isSuccess ? 'Applying…' : 'Confirm'}
 					</button>
 				</div>
 			</Modal>
