@@ -12,6 +12,7 @@ import {
     type ReportReason,
     type TakedownPurge,
     type TakedownState,
+    canReinstate,
 } from "@bonitashare/shared-types";
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import {
@@ -26,10 +27,10 @@ import {
     users,
 } from "@bonitashare/core/db";
 import { HLS_BUCKET, THUMB_BUCKET, listKeys, removeObjects } from "@bonitashare/core/storage";
-import { PURGE_TAKEDOWN_CONTENT_JOB } from "@bonitashare/core/queue";
+import { PURGE_TAKEDOWN_CONTENT_JOB, TRANSCODE_HLS_JOB, restoreTranscodeJobId } from "@bonitashare/core/queue";
 import { db } from "@/db/client.js";
 import { storage } from "@/storage/client.js";
-import { fileProcessingQueue } from "@/queue/client.js";
+import { fileProcessingQueue, videoProcessingQueue } from "@/queue/client.js";
 
 const PAGE_SIZE = 50;
 const MAX_PAGE = 1000;
@@ -100,6 +101,8 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
                 ownerEmail: users.email,
                 deletedByOwner: sql<boolean>`${fileDeletions.fileId} IS NOT NULL`,
                 takedownState: fileTakedowns.state,
+                purgeContentAfter: fileTakedowns.purgeContentAfter,
+                contentPurged: sql<boolean>`${fileTakedowns.contentPurgedAt} IS NOT NULL`,
                 reportCount,
                 openCount: sql<number>`(count(*) FILTER (WHERE ${reports.status} = 'open'))::int`,
                 firstReportedAt: sql<Date>`min(${reports.createdAt})`,
@@ -154,6 +157,7 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
                     for (const r of fileReports) counts.set(r.reason, (counts.get(r.reason) ?? 0) + 1);
                     return {
                         ...row,
+                        purgeContentAfter: row.purgeContentAfter?.toISOString() ?? null,
                         firstReportedAt: new Date(row.firstReportedAt).toISOString(),
                         lastReportedAt: new Date(row.lastReportedAt).toISOString(),
                         reasons: [...counts].map(([r, count]) => ({ reason: r, count })).sort((a, b) => b.count - a.count),
@@ -297,6 +301,54 @@ const adminRoutes: FastifyPluginAsync = async (fastify) => {
             return { data: takedown, error: null };
         },
     );
+
+    // Served at /api/v1/admin/files/:id/reinstate: undoes a takedown, so the file is back to normal for
+    // everyone. Only hidden files, and removed ones whose content hasn't been purged yet (deleting the
+    // takedown row also cancels the purge). Held files had their thumbnail and HLS deleted, so they stay
+    // held. The takedown row goes; the 'release' event keeps the history. Reports are left as they were.
+    fastify.post<{ Params: { id: string } }>("/admin/files/:id/reinstate", async (req, reply): Promise<ApiResponse<null>> => {
+        const fileId = req.params.id;
+
+        const outcome = await db.transaction(async (tx) => {
+            // Locked, so the purge sweep (which locks the same row) either finishes first, and this sees
+            // content_purged_at, or waits and then finds no takedown to purge.
+            const [current] = await tx
+                .select({ state: fileTakedowns.state, contentPurgedAt: fileTakedowns.contentPurgedAt })
+                .from(fileTakedowns)
+                .where(eq(fileTakedowns.fileId, fileId))
+                .for("update");
+            if (!current) return "not-taken-down" as const;
+            if (!canReinstate(current.state, current.contentPurgedAt !== null)) return current.contentPurgedAt ? ("purged" as const) : ("held" as const);
+
+            await tx.delete(fileTakedowns).where(eq(fileTakedowns.fileId, fileId));
+            await tx.insert(takedownEvents).values({ fileId, action: "release", actorId: req.userId!, note: `was=${current.state}` });
+            return "reinstated" as const;
+        });
+
+        if (outcome === "not-taken-down") {
+            reply.code(404);
+            return fail("NOT_TAKEN_DOWN", "This file isn't taken down");
+        }
+        if (outcome === "purged") {
+            reply.code(409);
+            return fail("CONTENT_PURGED", "This file's content has already been deleted, so it can't be reinstated");
+        }
+        if (outcome === "held") {
+            reply.code(409);
+            return fail("HELD", "Held files can't be reinstated: their thumbnail and stream were deleted");
+        }
+
+        // The video-worker skips removed files, so a transcode that came due while this was removed is still
+        // 'pending'. Queue it again, as a restore does.
+        const [video] = await db.select({ status: fileVideos.status }).from(fileVideos).where(eq(fileVideos.fileId, fileId));
+        if (video?.status === "pending") {
+            await videoProcessingQueue
+                .add(TRANSCODE_HLS_JOB, { fileId }, { jobId: restoreTranscodeJobId(fileId) })
+                .catch((err) => req.log.error({ err, fileId }, "could not re-queue transcode after reinstate"));
+        }
+
+        return { data: null, error: null };
+    });
 };
 
 export default adminRoutes;

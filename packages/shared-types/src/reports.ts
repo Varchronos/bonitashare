@@ -50,6 +50,10 @@ export type AdminReportedFile = {
   deletedByOwner: boolean
   // Set once moderation has acted on it.
   takedownState: 'hidden' | 'removed' | 'held' | null
+  // A removed file's scheduled content purge; null otherwise.
+  purgeContentAfter: string | null
+  // The purge has run: the original is gone and the takedown can't be undone.
+  contentPurged: boolean
   reportCount: number
   openCount: number
   // How many reports gave each reason, most first.

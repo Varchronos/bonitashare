@@ -41,3 +41,8 @@ export type FileTakedown = {
   // When a removed file's original is deleted; null for hidden and held.
   purgeContentAfter: string | null
 }
+
+// Takedowns an admin can undo: hidden, and removed until its content is purged. Held files had their
+// thumbnail and HLS deleted, so they stay held.
+export const canReinstate = (state: TakedownState | null, contentPurged: boolean) =>
+  !contentPurged && (state === 'hidden' || state === 'removed')

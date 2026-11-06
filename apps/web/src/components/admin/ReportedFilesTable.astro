@@ -1,6 +1,7 @@
 ---
-import { REPORT_REASON_OPTIONS, type AdminReportedFile } from "@bonitashare/shared-types";
+import { REPORT_REASON_OPTIONS, canReinstate, type AdminReportedFile } from "@bonitashare/shared-types";
 import TakedownButton from "../TakedownButton";
+import ReinstateButton from "../ReinstateButton";
 
 interface Props {
 	files: AdminReportedFile[];
@@ -20,6 +21,10 @@ const formatDate = (iso: string) => `${dateFormat.format(new Date(iso))} UTC`;
 
 function fileStatus(file: AdminReportedFile): { label: string; tone: "error" | "neutral" } | null {
 	if (!file.filename) return { label: "Purged", tone: "neutral" };
+	if (file.contentPurged) return { label: "Removed · content purged", tone: "error" };
+	if (file.takedownState === "removed" && file.purgeContentAfter) {
+		return { label: `Removed · purges ${formatDate(file.purgeContentAfter)}`, tone: "error" };
+	}
 	if (file.takedownState) return { label: `Taken down: ${file.takedownState}`, tone: "error" };
 	if (file.deletedByOwner) return { label: "Deleted by owner", tone: "neutral" };
 	return null;
@@ -184,15 +189,25 @@ function fileStatus(file: AdminReportedFile): { label: string; tone: "error" | "
 									) : (
 										<span />
 									)}
-									{/* Purged files have nothing left to take down. */}
-									{file.filename && (
-										<TakedownButton
-											client:visible
-											fileId={file.fileId}
-											filename={file.filename}
-											currentState={file.takedownState}
-											defaultReason={file.reasons[0]?.reason ?? null}
-										/>
+									{/* Purged files (and removed ones whose content is gone) have nothing left to act on. */}
+									{file.filename && !file.contentPurged && (
+										<div class="flex shrink-0 gap-2">
+											{canReinstate(file.takedownState, file.contentPurged) && (
+												<ReinstateButton
+													client:visible
+													fileId={file.fileId}
+													filename={file.filename}
+													currentState={file.takedownState as "hidden" | "removed"}
+												/>
+											)}
+											<TakedownButton
+												client:visible
+												fileId={file.fileId}
+												filename={file.filename}
+												currentState={file.takedownState}
+												defaultReason={file.reasons[0]?.reason ?? null}
+											/>
+										</div>
 									)}
 								</div>
 							</td>
