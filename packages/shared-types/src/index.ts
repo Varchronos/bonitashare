@@ -116,7 +116,11 @@ export type Account = {
   email: string | null
   displayName: string | null
   tier: import('./tiers.js').Tier
+  // Admins see the moderation pages.
+  role: 'user' | 'admin'
 }
 
 export * from './tiers.js'
+export * from './reports.js'
+export * from './takedowns.js'
 export * from './utils/byte-conversion.js'

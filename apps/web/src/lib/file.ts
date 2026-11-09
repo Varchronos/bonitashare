@@ -1,5 +1,5 @@
 import type { AstroGlobal } from 'astro';
-import type { ApiResponse } from '@bonitashare/shared-types';
+import type { ApiResponse, FileTakedown } from '@bonitashare/shared-types';
 import { refreshSession } from './session';
 
 export type FileLink = {
@@ -13,6 +13,8 @@ export type FileLink = {
 	sizeBytes: number;
 	// Whether the viewer uploaded it; only other people's files go in the recently-viewed list.
 	isOwner: boolean;
+	// Set when moderation took the file down. Only the owner (hidden files) and admins get this far.
+	takedown: FileTakedown | null;
 };
 
 export type FileVideo = {

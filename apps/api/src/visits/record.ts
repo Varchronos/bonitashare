@@ -1,13 +1,13 @@
 import { db } from "@/db/client.js";
-import { artifactVisits, files, notDeleted, type Db } from "@bonitashare/core/db";
+import { artifactVisits, files, notDeleted, notTakenDown, type Db } from "@bonitashare/core/db";
 import { MAX_VISITS } from "@bonitashare/shared-types";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 
 // db itself or an open transaction, so signup can move the browser's visits in with the upgrade.
 type Executor = Db | Parameters<Parameters<Db["transaction"]>[0]>[0];
 
-// A file that belongs on someone's "Shared with you": one anybody with the link can open, that isn't
-// their own (those are under their uploads). The same rules GET /visits reads back with.
+// A file that belongs on someone's "Shared with you": one anybody with the link can open (so not taken
+// down), that isn't their own (those are under their uploads). The same rules GET /visits reads back with.
 export const fileVisibleToVisitor = (userId: string) =>
     and(
         eq(files.isPublic, true),
@@ -15,6 +15,7 @@ export const fileVisibleToVisitor = (userId: string) =>
         sql`${files.ownerId} IS DISTINCT FROM ${userId}`,
         or(isNull(files.expiresAt), gt(files.expiresAt, sql`now()`)),
         notDeleted(),
+        notTakenDown(),
     );
 
 // Records file visits for a signed-in user: one row per file, a revisit only ever moving it later,

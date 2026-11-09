@@ -2,15 +2,23 @@ import 'dotenv/config';
 import { pipeline } from 'node:stream/promises';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import sharp from 'sharp';
-import { and, eq, lt, lte, sql } from 'drizzle-orm';
-import { createDb, fileDeletions, fileVideos, files } from '@bonitashare/core/db';
+import { and, eq, isNull, lt, lte, sql } from 'drizzle-orm';
+import { createDb, fileDeletions, fileTakedowns, fileVideos, files, notTakenDown, takedownEvents } from '@bonitashare/core/db';
 import { nanoid } from 'nanoid';
-import { BUCKET, HLS_BUCKET, THUMB_BUCKET, createStorage } from '@bonitashare/core/storage';
+import {
+    BUCKET,
+    HLS_BUCKET,
+    THUMB_BUCKET,
+    createStorage,
+    listKeys as listStorageKeys,
+    removeObjects as removeStorageObjects,
+} from '@bonitashare/core/storage';
 import { onShutdown } from '@bonitashare/core/shutdown';
 import {
     FILE_PROCESSING_QUEUE,
     PROCESS_UPLOAD_JOB,
     PURGE_DELETED_FILES_JOB,
+    PURGE_TAKEDOWN_CONTENT_JOB,
     RECONCILE_UPLOADS_JOB,
     TRANSCODE_HLS_JOB,
     createFileProcessingQueue,
@@ -103,8 +111,20 @@ async function enqueueTranscode(fileId: string) {
 }
 
 async function processUpload(job: Job<ProcessUploadJob>) {
-    const [file] = await db.select().from(files).where(eq(files.id, job.data.fileId));
-    if (!file) return;
+    const [row] = await db
+        .select({ file: files, takedownState: fileTakedowns.state })
+        .from(files)
+        .leftJoin(fileTakedowns, eq(fileTakedowns.fileId, files.id))
+        .where(eq(files.id, job.data.fileId));
+    if (!row) return;
+    const { file } = row;
+
+    // Held or removed by moderation: a held file had its thumbnail and HLS deleted on purpose, and a
+    // removed one is on its way out, so neither gets new ones.
+    if (row.takedownState === 'held' || row.takedownState === 'removed') {
+        await db.update(files).set({ processingStatus: 'done', processingError: null }).where(eq(files.id, file.id));
+        return;
+    }
 
     // AI summaries are handled separately, later.
     if (
@@ -174,22 +194,8 @@ async function reconcileUploads() {
     console.log(`reconcile: ${stale.length} stale, ${toEnqueue.length} re-enqueued, ${repaired} repaired from job state`);
 }
 
-async function removeObjects(bucket: string, keys: string[]) {
-    if (keys.length === 0) return;
-    // Per-key failures come back in the response rather than as a throw.
-    const failed = (await storage.removeObjects(bucket, keys)).filter((r) => r?.Error);
-    if (failed.length > 0) {
-        throw new Error(`could not remove ${failed.length} objects from ${bucket}: ${failed[0]!.Error!.Code} ${failed[0]!.Error!.Message}`);
-    }
-}
-
-async function listKeys(bucket: string, prefix: string): Promise<string[]> {
-    const keys: string[] = [];
-    for await (const item of storage.listObjectsV2(bucket, prefix, true)) {
-        if (item.name) keys.push(item.name);
-    }
-    return keys;
-}
+const removeObjects = (bucket: string, keys: string[]) => removeStorageObjects(storage, bucket, keys);
+const listKeys = (bucket: string, prefix: string) => listStorageKeys(storage, bucket, prefix);
 
 // Hard-deletes one soft-deleted file: its original, thumbnail and HLS output, then its rows. Inside one
 // transaction that holds the file_deletions row, so a restore that got in first leaves nothing to find,
@@ -206,7 +212,9 @@ async function purgeFile(fileId: string) {
             .from(fileDeletions)
             .innerJoin(files, eq(files.id, fileDeletions.fileId))
             .leftJoin(fileVideos, eq(fileVideos.fileId, fileDeletions.fileId))
-            .where(and(eq(fileDeletions.fileId, fileId), lte(fileDeletions.purgeAfter, sql`now()`)))
+            // Taken-down files stay, deleted or not: file_takedowns keeps them as the record (and its foreign
+            // key would refuse the delete anyway). Their content goes through purgeTakedownContent instead.
+            .where(and(eq(fileDeletions.fileId, fileId), lte(fileDeletions.purgeAfter, sql`now()`), notTakenDown()))
             .for('update', { of: fileDeletions });
         if (!due) return;
 
@@ -233,7 +241,8 @@ async function purgeDeletedFiles() {
         const due = await db
             .select({ fileId: fileDeletions.fileId })
             .from(fileDeletions)
-            .where(lte(fileDeletions.purgeAfter, sql`now()`))
+            .innerJoin(files, eq(files.id, fileDeletions.fileId))
+            .where(and(lte(fileDeletions.purgeAfter, sql`now()`), notTakenDown()))
             // A total order (an account's files all share one purgeAfter), so the files that failed are always
             // the first ones left and the offset skips exactly them until the next sweep.
             .orderBy(fileDeletions.purgeAfter, fileDeletions.fileId)
@@ -258,6 +267,76 @@ async function purgeDeletedFiles() {
     if (purged + failed > 0) console.log(`purge: ${purged} deleted files purged, ${failed} failed`);
 }
 
+// Deletes the content of one file taken down as 'removed' once its purge_content_after has passed: the
+// original, its thumbnail and HLS output. The files row and the takedown stay, as the record of what was
+// there; content_purged_at marks it done. Same shape as purgeFile: the takedown row is locked, so an
+// admin changing the takedown at that moment waits, and a failed storage call rolls back for the next sweep.
+async function purgeTakedownFile(fileId: string) {
+    await db.transaction(async (tx) => {
+        const [due] = await tx
+            .select({ storageKey: files.storageKey, thumbKey: files.thumbKey, hlsPrefix: fileVideos.hlsPrefix })
+            .from(fileTakedowns)
+            .innerJoin(files, eq(files.id, fileTakedowns.fileId))
+            .leftJoin(fileVideos, eq(fileVideos.fileId, fileTakedowns.fileId))
+            .where(
+                and(
+                    eq(fileTakedowns.fileId, fileId),
+                    eq(fileTakedowns.state, 'removed'),
+                    lte(fileTakedowns.purgeContentAfter, sql`now()`),
+                    isNull(fileTakedowns.contentPurgedAt),
+                ),
+            )
+            .for('update', { of: fileTakedowns });
+        if (!due) return;
+
+        await removeObjects(BUCKET, [due.storageKey, `${due.storageKey}.info`]);
+        if (due.thumbKey) await removeObjects(THUMB_BUCKET, [due.thumbKey]);
+        if (due.hlsPrefix) await removeObjects(HLS_BUCKET, await listKeys(HLS_BUCKET, `${due.hlsPrefix}/`));
+
+        await tx.update(files).set({ thumbKey: null }).where(eq(files.id, fileId));
+        await tx.delete(fileVideos).where(eq(fileVideos.fileId, fileId));
+        await tx.update(fileTakedowns).set({ contentPurgedAt: sql`now()`, updatedAt: sql`now()` }).where(eq(fileTakedowns.fileId, fileId));
+        // actorId null: the system did it.
+        await tx.insert(takedownEvents).values({ fileId, action: 'purge_content', actorId: null });
+    });
+}
+
+// Batch after batch until nothing is due, like purgeDeletedFiles.
+async function purgeTakedownContent() {
+    let purged = 0;
+    let failed = 0;
+    for (;;) {
+        const due = await db
+            .select({ fileId: fileTakedowns.fileId })
+            .from(fileTakedowns)
+            .where(
+                and(
+                    eq(fileTakedowns.state, 'removed'),
+                    lte(fileTakedowns.purgeContentAfter, sql`now()`),
+                    isNull(fileTakedowns.contentPurgedAt),
+                ),
+            )
+            .orderBy(fileTakedowns.purgeContentAfter, fileTakedowns.fileId)
+            .limit(PURGE_BATCH_SIZE)
+            .offset(failed);
+        if (due.length === 0) break;
+
+        let batchPurged = 0;
+        for (const { fileId } of due) {
+            try {
+                await purgeTakedownFile(fileId);
+                batchPurged++;
+            } catch (err) {
+                console.error(`takedown purge: file ${fileId} failed, retrying next sweep:`, err);
+                failed++;
+            }
+        }
+        purged += batchPurged;
+        if (batchPurged === 0 || due.length < PURGE_BATCH_SIZE) break;
+    }
+    if (purged + failed > 0) console.log(`takedown purge: ${purged} removed files purged, ${failed} failed`);
+}
+
 // Only moves a row out of 'pending', so a sweep racing a job that just finished can't overwrite its result.
 async function markProcessed(
     fileId: string,
@@ -274,6 +353,7 @@ const worker = new Worker<FileProcessingJobData, void, FileProcessingJobName>(
     async (job) => {
         if (job.name === RECONCILE_UPLOADS_JOB) return reconcileUploads();
         if (job.name === PURGE_DELETED_FILES_JOB) return purgeDeletedFiles();
+        if (job.name === PURGE_TAKEDOWN_CONTENT_JOB) return purgeTakedownContent();
         return processUpload(job as Job<ProcessUploadJob>);
     },
     // Peak memory scales with this raise it deliberately, not by default.
@@ -322,6 +402,12 @@ await fileProcessingQueue.upsertJobScheduler(
     PURGE_DELETED_FILES_JOB,
     { every: PURGE_EVERY_MS },
     { name: PURGE_DELETED_FILES_JOB, data: {}, opts: { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } } },
+);
+
+await fileProcessingQueue.upsertJobScheduler(
+    PURGE_TAKEDOWN_CONTENT_JOB,
+    { every: PURGE_EVERY_MS },
+    { name: PURGE_TAKEDOWN_CONTENT_JOB, data: {}, opts: { attempts: 1, removeOnComplete: true, removeOnFail: { count: 50 } } },
 );
 
 console.log('Worker listening on queue:', FILE_PROCESSING_QUEUE);

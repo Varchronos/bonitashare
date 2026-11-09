@@ -1,3 +1,4 @@
 export * from './client.js';
 export * from './schema.js';
+export * from './schema/file_takedowns.js';
 export * from './deletions.js';

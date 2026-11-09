@@ -1,6 +1,6 @@
 import { db } from "@/db/client.js";
 import { userSessions, users } from "@bonitashare/core/db";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import type { FastifyPluginAsync, FastifyReply, FastifyRequest, onRequestHookHandler } from "fastify";
 import fp from "fastify-plugin";
 import type { ApiFailure } from "@bonitashare/shared-types";
@@ -18,6 +18,8 @@ declare module "fastify" {
         // Public routes that still care who's asking (e.g. owner-only files).
         // Sets userId when the session is valid, otherwise leaves it null.
         optionalSession: onRequestHookHandler;
+        // Moderation routes: a valid session for a signed-in account with role 'admin', or 401/403.
+        requireAdmin: onRequestHookHandler;
     }
 }
 
@@ -53,6 +55,17 @@ async function sessionByToken(token: string): Promise<Session | null> {
 export async function findSession(req: FastifyRequest): Promise<Session | null> {
     const token = cookieToken(req, SESSION_COOKIE);
     return token ? sessionByToken(token) : null;
+}
+
+// A signed-in account with role 'admin'. Read fresh each time rather than kept in the session, so taking
+// the role away works at once.
+export async function isAdminUser(userId: string | null): Promise<boolean> {
+    if (!userId) return false;
+    const [admin] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, userId), eq(users.role, "admin"), isNotNull(users.email)));
+    return !!admin;
 }
 
 export function isActive(session: Session) {
@@ -145,11 +158,13 @@ function cookieScope() {
 const handleSession: FastifyPluginAsync = async (fastify) => {
     fastify.decorateRequest("userId", null);
 
-    fastify.decorate("requireSession", async (req: FastifyRequest, rep: FastifyReply) => {
+    // Sets req.userId and returns null, or sends a 401 and returns the reply, which the hook must
+    // return too: an async hook that sends without returning the reply lets the request carry on.
+    async function checkSession(req: FastifyRequest, rep: FastifyReply) {
         const session = await findSession(req);
         if (session && isActive(session)) {
             req.userId = session.userId;
-            return;
+            return null;
         }
 
         // SESSION_EXPIRED tells the client a GET /session will renew it
@@ -158,6 +173,21 @@ const handleSession: FastifyPluginAsync = async (fastify) => {
             ? { data: null, error: { message: "Session expired", code: "SESSION_EXPIRED" } }
             : { data: null, error: { message: "No valid session", code: "UNAUTHENTICATED" } };
         return rep.code(401).send(body);
+    }
+
+    fastify.decorate("requireSession", async (req: FastifyRequest, rep: FastifyReply) => {
+        const denied = await checkSession(req, rep);
+        if (denied) return denied;
+    });
+
+    fastify.decorate("requireAdmin", async (req: FastifyRequest, rep: FastifyReply) => {
+        const denied = await checkSession(req, rep);
+        if (denied) return denied;
+
+        if (!(await isAdminUser(req.userId))) {
+            const body: ApiFailure = { data: null, error: { message: "Admins only", code: "FORBIDDEN" } };
+            return rep.code(403).send(body);
+        }
     });
 
     fastify.decorate("optionalSession", async (req: FastifyRequest) => {

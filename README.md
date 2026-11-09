@@ -131,3 +131,31 @@ One-time setup:
 5. The VPS fetches the commit with `git fetch`, so its checkout needs a remote it can read without
    your keys. The repo is public, so HTTPS works:
    `git remote set-url origin https://github.com/Varchronos/bonitashare.git`.
+
+### Cloudflare Tunnel
+
+The VPS has no inbound ports. `cloudflared` (in `docker-compose.prod.yml`) dials out to Cloudflare, and
+the tunnel's routes are set in the dashboard (Zero Trust → Networks → Tunnels → the tunnel → Public
+hostnames), not in this repo. `cloudflared` shares the `web` container's network, so `localhost` there
+means `web`, and the API is reached by its compose name.
+
+Routes, in this order (the first match wins):
+
+| # | Hostname          | Path              | Service                 |
+|---|-------------------|-------------------|-------------------------|
+| 1 | `app.example.com` | `^/api/v1/upload` | `http://api:3000`       |
+| 2 | `app.example.com` |                   | `http://localhost:4321` |
+| 3 | (catch-all)       |                   | `http_status:404`       |
+
+- Rule 1 sends tus uploads straight to the API. Below rule 2 it never matches, and uploads fall back
+  to the web app's proxy (`apps/web/src/lib/tusProxy.ts`): an extra hop, and the proxy errors when
+  an upload is cut off mid-chunk.
+- Rule 1's service is plain `http` on `api`, not `localhost` or `https`.
+- Cloudflare rejects request bodies over 100 MB, so tus chunks (`chunkSize` in
+  `apps/web/src/lib/upload-task.ts`) must stay below that.
+- Each hostname in the tunnel also needs to be in `security.allowedDomains` in
+  `apps/web/astro.config.mjs`.
+
+To check what the tunnel is running, look for the last `Updated to new configuration` line in
+`docker compose -f docker-compose.prod.yml logs cloudflared`. Each request it forwards logs the
+`ingressRule` index and `originService` it matched.

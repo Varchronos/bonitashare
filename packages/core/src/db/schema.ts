@@ -6,6 +6,7 @@ export const users = pgTable('users', {
     displayName: varchar('display_name', { length: 50 }),
     // Set only once the signup OTP is verified. Stored lowercased; the unique index below enforces that too.
     email: text('email'),
+    role: text('role', { enum: ['user', 'admin'] }).default('user'),
     // argon2id, encoded with its parameters.
     passwordHash: text('password_hash'),
     // Anonymous isn't a plan: it's implied by a null email.

@@ -1,0 +1,54 @@
+---
+import { REPORT_REASON_OPTIONS } from "@bonitashare/shared-types";
+
+interface Props {
+	reason: string;
+	minReports: string;
+	sort: "newest" | "oldest";
+}
+
+// The admin reports page's filters. A plain GET form, so the filters live in the URL and need no script.
+const { reason, minReports, sort } = Astro.props;
+---
+
+<form
+	method="get"
+	class="mb-6 grid grid-cols-1 items-end gap-4 rounded-[28px] bg-surface-container-low p-5 sm:grid-cols-2 sm:px-6 lg:grid-cols-[minmax(0,1fr)_12rem_12rem_auto]"
+>
+	<label class="flex min-w-0 flex-col gap-1.5 text-sm text-on-surface-variant">
+		Reason
+		<select name="reason" class="h-10 w-full rounded-md bg-surface-container px-3 text-base text-on-surface outline-none focus:ring-2 focus:ring-primary">
+			<option value="" selected={!reason}>Any reason</option>
+			{
+				REPORT_REASON_OPTIONS.map((o) => (
+					<option value={o.value} selected={reason === o.value}>
+						{o.label}
+					</option>
+				))
+			}
+		</select>
+	</label>
+	<label class="flex min-w-0 flex-col gap-1.5 text-sm text-on-surface-variant">
+		Minimum reports
+		<input
+			name="minReports"
+			type="number"
+			min="1"
+			step="1"
+			placeholder="1"
+			value={minReports}
+			class="h-10 w-full rounded-md bg-surface-container px-3 text-base text-on-surface outline-none focus:ring-2 focus:ring-primary"
+		/>
+	</label>
+	<label class="flex min-w-0 flex-col gap-1.5 text-sm text-on-surface-variant">
+		Last reported
+		<select name="sort" class="h-10 w-full rounded-md bg-surface-container px-3 text-base text-on-surface outline-none focus:ring-2 focus:ring-primary">
+			<option value="newest" selected={sort === "newest"}>Newest first</option>
+			<option value="oldest" selected={sort === "oldest"}>Oldest first</option>
+		</select>
+	</label>
+	<div class="flex gap-2">
+		<button type="submit" class="btn btn-filled">Apply</button>
+		<a href="/admin/reports" class="btn btn-text">Reset</a>
+	</div>
+</form>

@@ -6,11 +6,17 @@ export const FILE_PROCESSING_QUEUE = 'file-processing';
 export const PROCESS_UPLOAD_JOB = 'process-upload';
 export const RECONCILE_UPLOADS_JOB = 'reconcile-uploads';
 export const PURGE_DELETED_FILES_JOB = 'purge-deleted-files';
+// Deletes the stored content of files taken down as 'removed' once their purge_content_after passes.
+export const PURGE_TAKEDOWN_CONTENT_JOB = 'purge-takedown-content';
 
 export type ProcessUploadJob = { fileId: string };
 // The sweep jobs carry no data; they read what to do from the database.
 export type FileProcessingJobData = ProcessUploadJob | Record<string, never>;
-export type FileProcessingJobName = typeof PROCESS_UPLOAD_JOB | typeof RECONCILE_UPLOADS_JOB | typeof PURGE_DELETED_FILES_JOB;
+export type FileProcessingJobName =
+    | typeof PROCESS_UPLOAD_JOB
+    | typeof RECONCILE_UPLOADS_JOB
+    | typeof PURGE_DELETED_FILES_JOB
+    | typeof PURGE_TAKEDOWN_CONTENT_JOB;
 
 // BullMQ doesn't close a connection it was handed, so callers close the queue and the connection separately.
 export const createFileProcessingQueue = (connection: Redis) =>
