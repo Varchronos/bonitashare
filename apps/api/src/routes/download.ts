@@ -21,6 +21,8 @@ type FileLink = {
     sizeBytes: number;
     // Whether the viewer uploaded it. The share page keeps a recently-viewed list of other people's files.
     isOwner: boolean;
+    // When the upload finished (ISO). Only sent to the owner and admins; null for everyone else.
+    uploadedAt: string | null;
     // Only the owner and admins are told; anyone else can't open a taken-down file at all.
     takedown: FileTakedown | null;
 };
@@ -106,6 +108,9 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
         const { file, isOwner, takedown, failure } = await findServableFile(req, reply);
         if (!file) return failure;
 
+        // isAdminUser answers signed-out visitors without a query, so anonymous views don't pay for this.
+        const canSeeUploadDate = isOwner || (await isAdminUser(req.userId));
+
         // With S3_REGION set, signing is local (no request to storage), so two URLs cost nothing extra.
         const [url, downloadUrl] = await Promise.all([
             publicStorage.presignedGetObject(BUCKET, file.storageKey, URL_EXPIRY_SECONDS, {
@@ -128,6 +133,7 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
                 contentType: file.contentType,
                 sizeBytes: file.sizeBytes,
                 isOwner,
+                uploadedAt: canSeeUploadDate ? (file.uploadedAt ?? file.createdAt).toISOString() : null,
                 takedown,
             },
             error: null,

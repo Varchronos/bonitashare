@@ -1,5 +1,7 @@
 ---
+import { renderSVG } from "uqr";
 import ReportFile from "../ReportFile";
+import QrCodeButton from "./QrCodeButton";
 
 interface Props {
 	fileId: string;
@@ -11,14 +13,38 @@ interface Props {
 }
 
 const { fileId, filename, downloadUrl, canReport, signedIn } = Astro.props;
+
+// The QR code is rendered here, on the server, so the browser gets plain SVG and not the QR library.
+// Medium error correction keeps it readable off a glare-y screen without making it much denser.
+const pageUrl = new URL(`/f/${encodeURIComponent(fileId)}`, Astro.url).href;
+const qrSvg = renderSVG(pageUrl, { ecc: "M", border: 2 });
 ---
 
-<div class="flex flex-wrap items-center gap-3">
+{/* One row beside the title; may wrap only when stacked under it on narrow screens. */}
+<div class="flex shrink-0 flex-wrap items-center gap-3 sm:flex-nowrap">
+	<QrCodeButton client:idle url={pageUrl} svg={qrSvg} />
 	<a class="btn btn-filled" href={downloadUrl}>
-		<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+		<svg
+			width="18"
+			height="18"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			stroke-width="2"
+			stroke-linecap="round"
+			stroke-linejoin="round"
+			aria-hidden="true"
+		>
 			<path d="M12 4v12m0 0-5-5m5 5 5-5M5 20h14" />
 		</svg>
 		Download file
 	</a>
-	{canReport && <ReportFile client:idle fileId={fileId} filename={filename} signedIn={signedIn} />}
+	{canReport && (
+		<ReportFile
+			client:idle
+			fileId={fileId}
+			filename={filename}
+			signedIn={signedIn}
+		/>
+	)}
 </div>

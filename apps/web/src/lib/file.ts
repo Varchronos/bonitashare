@@ -13,6 +13,8 @@ export type FileLink = {
 	sizeBytes: number;
 	// Whether the viewer uploaded it; only other people's files go in the recently-viewed list.
 	isOwner: boolean;
+	// When the upload finished (ISO). Only sent to the owner and admins; null for everyone else.
+	uploadedAt: string | null;
 	// Set when moderation took the file down. Only the owner (hidden files) and admins get this far.
 	takedown: FileTakedown | null;
 };

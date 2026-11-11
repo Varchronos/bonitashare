@@ -83,7 +83,7 @@ const visit =
 ---
 
 <Layout title={file?.filename ?? "File not found"} description={description} ogImage={ogImage} ogVideo={ogVideo}>
-	<section class="mx-auto w-full max-w-page px-4 py-12">
+	<section class="mx-auto w-full max-w-page px-4 pb-12 pt-8">
 		{
 			file ? (
 				<>
@@ -110,13 +110,31 @@ const visit =
 							</span>
 						</p>
 					)}
-					<h1 class="mb-2 text-headline wrap-break-word">{file.filename}</h1>
-					<p class="mb-6 text-sm text-on-surface-variant">
-						{formatBytes(file.sizeBytes)}
-						{file.contentType ? ` · ${file.contentType}` : ""}
-					</p>
+					{/* Title on the left, actions on the right; stacked on narrow screens. */}
+					<div class="mb-6 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+						<div class="min-w-0">
+							<h1 class="mb-2 text-headline wrap-break-word">{file.filename}</h1>
+							<p class="text-sm text-on-surface-variant">
+								{formatBytes(file.sizeBytes)}
+								{file.contentType ? ` · ${file.contentType}` : ""}
+								{file.uploadedAt && (
+									<>
+										{" · Uploaded "}
+										<time data-local datetime={file.uploadedAt}>{new Date(file.uploadedAt).toUTCString()}</time>
+									</>
+								)}
+							</p>
+						</div>
+						<FileActions
+							fileId={id!}
+							filename={file.filename}
+							downloadUrl={file.downloadUrl}
+							canReport={!file.isOwner && !file.takedown}
+							signedIn={signedIn}
+						/>
+					</div>
 
-					<div class="mb-6">
+					<div>
 						{isImage && <ImagePreview src={file.url} alt={file.filename} />}
 						{isVideo && (
 							<VideoPlayer
@@ -132,14 +150,6 @@ const visit =
 						{isAudio && <AudioPlayer src={file.url} />}
 						{!isImage && !isVideo && !isAudio && <FilePreview />}
 					</div>
-
-					<FileActions
-						fileId={id!}
-						filename={file.filename}
-						downloadUrl={file.downloadUrl}
-						canReport={!file.isOwner && !file.takedown}
-						signedIn={signedIn}
-					/>
 				</>
 			) : (
 				<>
@@ -175,7 +185,7 @@ const visit =
 	import { recordVisit, removeVisit } from "../../lib/recent-visits";
 	import { recordRemoteVisit } from "../../lib/visits";
 
-	// Admin notice times, in the viewer's own time zone (the server rendered them in UTC).
+	// Admin notice and upload times, in the viewer's own time zone (the server rendered them in UTC).
 	const localTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
 	for (const el of document.querySelectorAll<HTMLTimeElement>("time[data-local]")) {
 		el.textContent = localTime.format(new Date(el.dateTime));
