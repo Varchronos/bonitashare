@@ -10,6 +10,9 @@ export type UploadTask = Omit<FileItem, 'fileStatus'> & {
     // Filled in after the upload, once the worker has made one. Optional because tasks persisted
     // before this field existed won't have it.
     thumbnailUrl?: string | null;
+    // The file's last-modified time in ms, matched when an interrupted upload's file is added again.
+    // Missing on tasks saved before it was kept, and null for server-listed uploads that never sent it.
+    lastModified?: number | null;
     bytesUploaded: number;
     status: UploadTaskStatus,
     errorMessage: string | null

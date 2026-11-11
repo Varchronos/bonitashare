@@ -1,5 +1,5 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { quotaMessages, type ApiResponse, type DeletedFile, type FilePage } from '@bonitashare/shared-types';
+import { quotaMessages, type ApiResponse, type DeletedFile, type FilePage, type IncompleteUpload } from '@bonitashare/shared-types';
 import { and, desc, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { fileDeletions, fileTakedowns, fileVideos, files, notDeleted } from '@bonitashare/core/db';
@@ -8,6 +8,7 @@ import { thumbUrl } from '@/storage/client.js';
 import { videoProcessingQueue } from '@/queue/client.js';
 import { resolveTier } from '@/upload/tier.js';
 import { getUsage } from '@/upload/usage.js';
+import { uploadProgress } from '@/upload/tusServer.js';
 
 const DEFAULT_LIMIT = 30;
 const MAX_LIMIT = 100;
@@ -42,6 +43,37 @@ function decodeCursor(cursor: string): [string, string] | null {
         }
     } catch {}
     return null;
+}
+
+// More than this many unfinished uploads at once is unlikely; past it the oldest go unlisted.
+const MAX_INCOMPLETE_LISTED = 50;
+
+// The user's unfinished uploads, so ones this browser lost track of (dismissed, another browser,
+// cleared site data) can still be continued or removed. Each one costs a storage read for its offset.
+// Ones a request is writing to right now are running in another tab or device, so they're left out.
+async function listIncomplete(userId: string): Promise<IncompleteUpload[]> {
+    const rows = await db
+        .select({
+            id: files.id,
+            filename: files.filename,
+            contentType: files.contentType,
+            sizeBytes: files.sizeBytes,
+            storageKey: files.storageKey,
+            createdAt: files.createdAt,
+        })
+        .from(files)
+        .where(and(eq(files.ownerId, userId), eq(files.fileStatus, 'uploading'), notExpired(), notDeleted(), ownerCanManage()))
+        .orderBy(desc(files.createdAt))
+        .limit(MAX_INCOMPLETE_LISTED);
+
+    const listed = await Promise.all(
+        rows.map(async ({ storageKey, createdAt, ...row }) => {
+            const { active, offset, lastModified } = await uploadProgress(storageKey);
+            if (active) return null;
+            return { ...row, bytesUploaded: offset, lastModified, createdAt: createdAt.toISOString() };
+        }),
+    );
+    return listed.filter((upload) => upload !== null);
 }
 
 const fileRoutes: FastifyPluginAsync = async (fastify) => {
@@ -105,6 +137,12 @@ const fileRoutes: FastifyPluginAsync = async (fastify) => {
             },
             error: null,
         };
+    });
+
+    // Served at /api/v1/files/incomplete: fetched by the upload page after it loads, so the storage
+    // reads it costs never hold up the page.
+    fastify.get('/files/incomplete', async (req): Promise<ApiResponse<IncompleteUpload[]>> => {
+        return { data: await listIncomplete(req.userId!), error: null };
     });
 
     // Served at /api/v1/files/:id: a soft delete. The file 404s and leaves the storage quota at once

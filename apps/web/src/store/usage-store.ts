@@ -17,6 +17,11 @@ export const useUsageStore = create<UsageStore>()((set) => ({
     setUsage: (usage, countedIds = []) => set({ usage, countedIds }),
 }));
 
+// For an upload created on an earlier page load and resumed now: `usage` already counts it in full.
+export function markCounted(id: string) {
+    useUsageStore.setState((s) => (s.countedIds.includes(id) ? s : { countedIds: [...s.countedIds, id] }));
+}
+
 function isActive(task: UploadTask) {
     return task.status === 'queued' || task.status === 'uploading' || task.status === 'paused';
 }

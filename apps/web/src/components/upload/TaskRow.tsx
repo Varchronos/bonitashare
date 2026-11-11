@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { formatBytes } from '@bonitashare/shared-types';
 import { useUploadStore, type UploadTask } from '../../store/file-store';
-import { pauseUpload, resumeUpload, cancelUpload, shareIdFor, watchThumbnail } from '../../lib/upload-task';
+import { pauseUpload, resumeUpload, cancelUpload, canRetry, shareIdFor, watchThumbnail } from '../../lib/upload-task';
 import { TrashIcon, CheckIcon, PauseIcon, PlayIcon, RetryIcon } from './icons';
 import FileThumb from './FileThumb';
 import ShareLinks from './ShareLinks';
@@ -49,6 +49,8 @@ export default function TaskRow({ id }: { id: string }) {
 
 	const isDone = task.status === 'done';
 	const isError = task.status === 'error';
+	// Stopped partway with no file behind it in this page: the bar shows how far it got.
+	const interrupted = isError && !!task.tusUploadUrl && !canRetry(id);
 	const pct = task.sizeBytes ? Math.round((task.bytesUploaded / task.sizeBytes) * 100) : 0;
 	const link = isDone ? linkFor(task) : null;
 
@@ -82,7 +84,7 @@ export default function TaskRow({ id }: { id: string }) {
 									<PlayIcon />
 								</button>
 							)}
-							<button type="button" className="icon-btn icon-btn-sm hover:text-error" aria-label="Cancel" onClick={() => cancelUpload(id)}>
+							<button type="button" className="icon-btn icon-btn-sm hover:text-error" aria-label={isError ? 'Remove' : 'Cancel'} onClick={() => cancelUpload(id)}>
 								<TrashIcon />
 							</button>
 						</div>
@@ -93,17 +95,20 @@ export default function TaskRow({ id }: { id: string }) {
 				<div className="h-1 overflow-hidden rounded-full bg-secondary-container">
 					<div
 						className={`h-full rounded-full transition-[width] duration-100 ${isError ? 'bg-error' : isDone ? 'bg-success' : 'bg-primary'}`}
-						style={{ width: `${isError ? 100 : pct}%` }}
+						style={{ width: `${isError && !interrupted ? 100 : pct}%` }}
 					/>
 				</div>
 
 				<div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
 					{isError && (
 						<>
-							<span className="min-w-0 truncate text-xs text-error">{task.errorMessage ?? 'Upload failed! Please try again.'}</span>
-							<button type="button" className="btn btn-text btn-sm -mr-2 px-2" onClick={() => resumeUpload(id)}>
-								Try again <RetryIcon />
-							</button>
+							<span className="min-w-0 line-clamp-2 text-xs text-error" title={task.errorMessage ?? undefined}>{task.errorMessage ?? 'Upload failed! Please try again.'}</span>
+							{/* Interrupted uploads have no file in this page to send: their message says to add it again. */}
+							{canRetry(id) && (
+								<button type="button" className="btn btn-text btn-sm -mr-2 px-2" onClick={() => resumeUpload(id)}>
+									Try again <RetryIcon />
+								</button>
+							)}
 						</>
 					)}
 					{isDone && (

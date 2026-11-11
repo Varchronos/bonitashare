@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { ERRORS, type Lock, type Locker, type RequestRelease } from '@tus/server';
 
-const LOCK_PREFIX = 'tus:lock:';
+export const LOCK_PREFIX = 'tus:lock:';
 const RELEASE_PREFIX = 'tus:lock-release:';
 
 // Compare-and-act on the token so a replica never extends or deletes a lock it no longer owns.

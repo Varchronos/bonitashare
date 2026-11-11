@@ -1,4 +1,4 @@
-import type { ApiResponse, DeletedFile, FilePage } from '@bonitashare/shared-types';
+import type { ApiResponse, DeletedFile, FilePage, IncompleteUpload } from '@bonitashare/shared-types';
 
 // Server-to-server during render, like lib/usage.ts, so the first page of the user's files is in the
 // first HTML. Null if the API couldn't answer — the list then loads from the browser instead.
@@ -18,6 +18,14 @@ export async function getFiles(cookie: string, limit?: number): Promise<FilePage
 export async function fetchFiles(cursor: string | null): Promise<FilePage> {
 	const res = await fetch(cursor ? `/api/v1/files?cursor=${encodeURIComponent(cursor)}` : '/api/v1/files');
 	const { data, error } = (await res.json()) as ApiResponse<FilePage>;
+	if (!data) throw new Error(error.message);
+	return data;
+}
+
+// Browser side: the user's unfinished uploads, through the pages/api/v1/files/incomplete proxy.
+export async function fetchIncompleteUploads(): Promise<IncompleteUpload[]> {
+	const res = await fetch('/api/v1/files/incomplete');
+	const { data, error } = (await res.json()) as ApiResponse<IncompleteUpload[]>;
 	if (!data) throw new Error(error.message);
 	return data;
 }

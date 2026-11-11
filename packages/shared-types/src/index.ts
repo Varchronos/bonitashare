@@ -57,6 +57,20 @@ export type UserFile = {
   expiresAt: string | null
 }
 
+// One of the user's uploads that started but never finished, and isn't running anywhere right now.
+// The upload page shows it as interrupted: adding the same file again continues it, removing it
+// cancels it. It counts against storage at full size until one of those happens.
+export type IncompleteUpload = {
+  id: string
+  filename: string
+  contentType: string | null
+  sizeBytes: number
+  bytesUploaded: number
+  // The file's last-modified time in ms, when the client sent it; matched when the file is added again.
+  lastModified: number | null
+  createdAt: string
+}
+
 export type FilePage = {
   files: UserFile[]
   // Pass back as ?cursor= for the next page; null on the last one.

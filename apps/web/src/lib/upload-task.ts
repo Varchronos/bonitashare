@@ -1,7 +1,7 @@
 import * as tus from 'tus-js-client'
-import type { ApiResponse } from '@bonitashare/shared-types'
+import type { ApiResponse, IncompleteUpload } from '@bonitashare/shared-types'
 import { useUploadStore, type UploadTask } from '../store/file-store'
-import { refreshUsage } from '../store/usage-store'
+import { markCounted, quotaProblem, refreshUsage } from '../store/usage-store'
 
 export class UploadQueue {
     public queue: tus.Upload[]
@@ -99,15 +99,34 @@ function shouldRetryUpload(err: tus.DetailedError) {
     return status < 400 || status >= 500 || status === 409 || status === 423 || status === 429
 }
 
-// With `blockedReason` (from the quota check), the task is shown as failed with that reason and not
-// started. Try again still sends it, so the server makes the final call.
-export function enqueueFile(file: File, blockedReason: string | null = null): string {
-    const id = crypto.randomUUID()
+const UPLOAD_ENDPOINT = '/api/v1/upload'
+
+// An interrupted task this file can continue: one with no live upload behind it (restored after a
+// reload, or listed by the server), for the same file. The last-modified time tells apart two files
+// with the same name and size; uploads that never sent it are matched on name and size alone.
+function findInterruptedTask(file: File) {
+    return useUploadStore.getState().files.find((t) =>
+        t.status === 'error' &&
+        t.tusUploadUrl &&
+        !liveUploads.has(t.id) &&
+        t.filename === file.name &&
+        t.sizeBytes === file.size &&
+        (t.lastModified == null || t.lastModified === file.lastModified))
+}
+
+// Adding a file whose upload was interrupted continues that upload under its old task. Otherwise
+// it's a new task, and if the quota check fails it's shown as failed with the reason and not started.
+// Try again still sends it, so the server makes the final call.
+export function enqueueFile(file: File): string {
+    const interrupted = findInterruptedTask(file)
+    const id = interrupted?.id ?? crypto.randomUUID()
     const { addFiles, updateFile } = useUploadStore.getState()
 
     const upload = new tus.Upload(file, {
-        endpoint: '/api/v1/upload',
-        metadata: { filename: file.name, filetype: file.type },
+        endpoint: UPLOAD_ENDPOINT,
+        // Interrupted uploads are found through the task list instead, which the server fills in too.
+        storeFingerprintForResuming: false,
+        metadata: { filename: file.name, filetype: file.type, lastModified: String(file.lastModified) },
         // Cloudflare rejects request bodies over 100 MB, so this is the biggest chunk that fits, kept to
         // whole 8 MiB storage parts so a chunk never leaves a partial part for the next to re-read.
         // Most files go up in one request, which the server streams to storage part by part as it
@@ -135,6 +154,20 @@ export function enqueueFile(file: File, blockedReason: string | null = null): st
     })
 
     liveUploads.set(id, upload)
+
+    if (interrupted) {
+        // tus asks the server how far it got and sends the rest. If the server no longer has it
+        // (expired, cancelled, or another account's), tus starts a fresh upload instead.
+        upload.url = interrupted.tusUploadUrl
+        // The server reserved this upload's full size when it was created, so the usage from this
+        // page load already includes it.
+        markCounted(id)
+        updateFile(id, { status: 'queued', errorMessage: null, lastModified: file.lastModified })
+        queue.add(upload)
+        return id
+    }
+
+    const blockedReason = quotaProblem(file.size)
     addFiles([
         {
             id,
@@ -144,6 +177,7 @@ export function enqueueFile(file: File, blockedReason: string | null = null): st
             filename: file.name,
             contentType: file.type || 'application/octet-stream',
             sizeBytes: file.size,
+            lastModified: file.lastModified,
             isPublic: true,
             createdAt: new Date(),
             expiresAt: null,
@@ -156,6 +190,46 @@ export function enqueueFile(file: File, blockedReason: string | null = null): st
     if (!blockedReason) queue.add(upload)
 
     return id
+}
+
+export const INTERRUPTED_MESSAGE = 'Upload interrupted. Add this file again to continue, or remove it.'
+
+// Server-listed unfinished uploads this browser has no task for, added as interrupted tasks. Ones it
+// already has (restored after a reload) get the server's offset, which is the true one.
+export function addIncompleteUploads(incomplete: IncompleteUpload[]) {
+    const { files, addFiles, updateFile } = useUploadStore.getState()
+    const missing: UploadTask[] = []
+    for (const upload of incomplete) {
+        const task = files.find((t) => shareIdFor(t) === upload.id)
+        if (task) {
+            if (task.status === 'error' && !liveUploads.has(task.id)) updateFile(task.id, { bytesUploaded: upload.bytesUploaded })
+            continue
+        }
+        missing.push({
+            id: crypto.randomUUID(),
+            ownerId: null,
+            storageKey: '',
+            thumbKey: null,
+            filename: upload.filename,
+            contentType: upload.contentType || 'application/octet-stream',
+            sizeBytes: upload.sizeBytes,
+            lastModified: upload.lastModified,
+            isPublic: true,
+            createdAt: new Date(upload.createdAt),
+            expiresAt: null,
+            tusUploadUrl: new URL(`${UPLOAD_ENDPOINT}/${upload.id}`, window.location.origin).href,
+            bytesUploaded: upload.bytesUploaded,
+            status: 'error',
+            errorMessage: INTERRUPTED_MESSAGE,
+        })
+    }
+    // Oldest first: the list shows the store's tail, newest first.
+    if (missing.length) addFiles(missing.reverse())
+}
+
+// A Try again that can act: there's a live upload (with its file) to send again.
+export function canRetry(id: string) {
+    return liveUploads.has(id)
 }
 
 export function pauseUpload(id: string) {
@@ -236,6 +310,14 @@ export function cancelUpload(id: string) {
         // Terminating lowers the server's reservation to what was sent, so refetch once that's done.
         upload.abort(true).catch(() => {}).finally(refreshUsage)
         liveUploads.delete(id)
+    } else {
+        // An interrupted upload (no file behind it in this page): cancel it on the server by its URL,
+        // which deletes the row and the partial data and lowers the reservation to what was sent.
+        // If that fails, the server still lists it and it comes back on the next page load.
+        const task = useUploadStore.getState().files.find((t) => t.id === id)
+        if (task?.tusUploadUrl && task.status !== 'done') {
+            tus.Upload.terminate(task.tusUploadUrl).catch(() => {}).finally(refreshUsage)
+        }
     }
     useUploadStore.getState().removeFile(id)
 }

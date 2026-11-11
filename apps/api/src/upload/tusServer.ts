@@ -9,7 +9,7 @@ import { BUCKET } from '@bonitashare/core/storage';
 import { PROCESS_UPLOAD_JOB, processUploadJobId } from '@bonitashare/core/queue';
 import { fileProcessingQueue } from '@/queue/client.js';
 import { Redis } from 'ioredis';
-import { RedisLocker } from './redisLocker.js';
+import { LOCK_PREFIX, RedisLocker } from './redisLocker.js';
 import { ExpiringRedisKvStore } from './redisKvStore.js';
 import { getUsage } from './usage.js';
 
@@ -67,6 +67,25 @@ const toShareId = (uploadId: string) => uploadId.slice(UPLOAD_KEY_PREFIX.length)
 // Sent by the client as tus metadata, in seconds. Tiers without custom expiry always get their
 // maximum; the others get what they asked for, capped at it, or the maximum when they don't ask.
 const EXPIRES_IN_METADATA = 'expiresIn';
+
+// Sent by the client as tus metadata: the file's last-modified time in ms, so a file added again
+// to continue an interrupted upload can be told apart from another one with the same name and size.
+const LAST_MODIFIED_METADATA = 'lastModified';
+
+// For listing an unfinished upload: how much has arrived, and whether a request is writing to it right
+// now (the tus lock is held), meaning it's still running in some tab or device rather than abandoned.
+// An upload the store can't read reports nothing received.
+export async function uploadProgress(storageKey: string) {
+    const [active, upload] = await Promise.all([
+        tusRedis.exists(LOCK_PREFIX + storageKey).then((n) => n === 1, () => false),
+        datastore.getUpload(storageKey).catch(() => null),
+    ]);
+    return {
+        active,
+        offset: upload?.offset ?? 0,
+        lastModified: Number(upload?.metadata?.[LAST_MODIFIED_METADATA]) || null,
+    };
+}
 
 function expiryFor(tier: Tier, requested: string | null | undefined): Date | null {
     const { maxExpirySeconds, customExpiry } = TIER_LIMITS[tier];
