@@ -50,7 +50,7 @@ const MAX_INCOMPLETE_LISTED = 50;
 
 // The user's unfinished uploads, so ones this browser lost track of (dismissed, another browser,
 // cleared site data) can still be continued or removed. Each one costs a storage read for its offset.
-// Ones a request is writing to right now are running in another tab or device, so they're left out.
+// Ones still running in another tab or device are left out, and lost ones are deleted (see uploadProgress).
 async function listIncomplete(userId: string): Promise<IncompleteUpload[]> {
     const rows = await db
         .select({
@@ -68,9 +68,9 @@ async function listIncomplete(userId: string): Promise<IncompleteUpload[]> {
 
     const listed = await Promise.all(
         rows.map(async ({ storageKey, createdAt, ...row }) => {
-            const { active, offset, lastModified } = await uploadProgress(storageKey);
-            if (active) return null;
-            return { ...row, bytesUploaded: offset, lastModified, createdAt: createdAt.toISOString() };
+            const progress = await uploadProgress(storageKey);
+            if (!progress) return null;
+            return { ...row, bytesUploaded: progress.offset, lastModified: progress.lastModified, createdAt: createdAt.toISOString() };
         }),
     );
     return listed.filter((upload) => upload !== null);

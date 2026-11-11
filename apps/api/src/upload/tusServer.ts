@@ -1,13 +1,14 @@
-import { EVENTS, Server } from '@tus/server';
+import { ERRORS, EVENTS, Server, type Upload } from '@tus/server';
 import { S3Store, type MetadataValue } from '@tus/s3-store';
 import { nanoid } from 'nanoid';
 import { eq, sql } from 'drizzle-orm';
 import { db } from '@/db/client.js';
 import { files, uploadUsage } from '@bonitashare/core/db';
 import { TIER_LIMITS, quotaMessages, type Tier } from '@bonitashare/shared-types';
-import { BUCKET } from '@bonitashare/core/storage';
+import { BUCKET, removeObjects } from '@bonitashare/core/storage';
 import { PROCESS_UPLOAD_JOB, processUploadJobId } from '@bonitashare/core/queue';
 import { fileProcessingQueue } from '@/queue/client.js';
+import { storage } from '@/storage/client.js';
 import { Redis } from 'ioredis';
 import { LOCK_PREFIX, RedisLocker } from './redisLocker.js';
 import { ExpiringRedisKvStore } from './redisKvStore.js';
@@ -41,11 +42,13 @@ export async function closeTusConnections() {
     await Promise.all([tusRedis.quit(), lockSubscriber.quit()]);
 }
 
+// Shared across replicas: the default in-memory cache is only cleared on the replica that
+// finished or removed an upload, so others kept stale entries (and never freed them).
+const metadataCache = new ExpiringRedisKvStore<MetadataValue>(tusRedis, 'tus:meta:', 7 * 24 * 60 * 60);
+
 const datastore = new S3Store({
     partSize: 8 * 1024 * 1024,
-    // Shared across replicas: the default in-memory cache is only cleared on the replica that
-    // finished or removed an upload, so others kept stale entries (and never freed them).
-    cache: new ExpiringRedisKvStore<MetadataValue>(tusRedis, 'tus:meta:', 7 * 24 * 60 * 60),
+    cache: metadataCache,
     s3ClientConfig: {
         bucket: BUCKET,
         endpoint: endpoint.origin,
@@ -72,19 +75,54 @@ const EXPIRES_IN_METADATA = 'expiresIn';
 // to continue an interrupted upload can be told apart from another one with the same name and size.
 const LAST_MODIFIED_METADATA = 'lastModified';
 
-// For listing an unfinished upload: how much has arrived, and whether a request is writing to it right
-// now (the tus lock is held), meaning it's still running in some tab or device rather than abandoned.
-// An upload the store can't read reports nothing received.
+const isMissing = (err: unknown) =>
+    typeof err === 'object' && err !== null && 'code' in err && (err.code === 'NotFound' || err.code === 'NoSuchKey');
+
+// An unfinished upload as storage has it, or null if it's lost. R2 aborts multipart uploads left
+// unfinished for 7 days but keeps their .info object, and S3Store reads a missing multipart upload as
+// a completed one: such an upload looks fully received with nothing of it stored. So "complete" only
+// counts if the finished object exists. No .info at all is lost too.
+async function findUnfinishedUpload(storageKey: string): Promise<Upload | null> {
+    let upload: Upload;
+    try {
+        upload = await datastore.getUpload(storageKey);
+    } catch (err) {
+        if (err === ERRORS.FILE_NOT_FOUND) return null;
+        throw err;
+    }
+    if (upload.offset !== upload.size) return upload;
+    try {
+        await storage.statObject(BUCKET, storageKey);
+        return upload;
+    } catch (err) {
+        if (isMissing(err)) return null;
+        throw err;
+    }
+}
+
+// Deletes a lost upload's leftovers and its row. Nothing it received survives, so it charges nothing.
+async function discardLostUpload(storageKey: string) {
+    await removeObjects(storage, BUCKET, [`${storageKey}.info`, `${storageKey}.part`]);
+    await metadataCache.delete(storageKey);
+    await releaseUpload(toShareId(storageKey), 0);
+}
+
+// For listing an unfinished upload: how much has arrived. Null when it shouldn't be listed: a request
+// is writing to it right now (the tus lock is held), so it's still running in some tab or device, or
+// it's lost, in which case it's discarded here. If storage can't be read, it's listed as nothing received.
 export async function uploadProgress(storageKey: string) {
-    const [active, upload] = await Promise.all([
-        tusRedis.exists(LOCK_PREFIX + storageKey).then((n) => n === 1, () => false),
-        datastore.getUpload(storageKey).catch(() => null),
-    ]);
-    return {
-        active,
-        offset: upload?.offset ?? 0,
-        lastModified: Number(upload?.metadata?.[LAST_MODIFIED_METADATA]) || null,
-    };
+    const locked = await tusRedis.exists(LOCK_PREFIX + storageKey).then((n) => n === 1, () => false);
+    if (locked) return null;
+    try {
+        const upload = await findUnfinishedUpload(storageKey);
+        if (!upload) {
+            await discardLostUpload(storageKey);
+            return null;
+        }
+        return { offset: upload.offset, lastModified: Number(upload.metadata?.[LAST_MODIFIED_METADATA]) || null };
+    } catch {
+        return { offset: 0, lastModified: null };
+    }
 }
 
 function expiryFor(tier: Tier, requested: string | null | undefined): Date | null {
@@ -186,13 +224,27 @@ export const tusServer = new Server({
         // tus also calls this for POST with the freshly generated id, before onUploadCreate inserts the row.
         if (req.method === 'POST') return;
 
-        const [file] = await db.select({ ownerId: files.ownerId }).from(files).where(eq(files.id, toShareId(id)));
+        const [file] = await db
+            .select({ ownerId: files.ownerId, fileStatus: files.fileStatus })
+            .from(files)
+            .where(eq(files.id, toShareId(id)));
         if (!file) {
             throw { status_code: 404, body: 'Upload not found\n' };
         }
         const userId = getUserId(req);
         if (!userId || file.ownerId !== userId) {
             throw { status_code: 403, body: 'You are not the owner of this upload\n' };
+        }
+
+        // A lost upload (see findUnfinishedUpload) is deleted as soon as a client asks about it: HEAD is
+        // a client checking where to continue from, DELETE a cancel. Either way it's gone afterwards, and
+        // the 410 makes a resuming client start a new upload of the file. PATCH is left out: one always
+        // follows a HEAD or a create, so it would only add a storage read to every chunk.
+        if ((req.method === 'HEAD' || req.method === 'DELETE') && file.fileStatus === 'uploading') {
+            if (!(await findUnfinishedUpload(id))) {
+                await discardLostUpload(id);
+                throw { status_code: 410, body: 'Upload expired before it finished\n' };
+            }
         }
 
         if (req.method === 'DELETE') {
@@ -203,18 +255,22 @@ export const tusServer = new Server({
     },
 });
 
+// After a cancelled upload's storage is gone: drops its row and charges only what was actually uploaded.
+// The usage row outlives the file and keeps counting for the week. Null offset leaves the charge alone.
+async function releaseUpload(fileId: string, offset: number | null) {
+    await db.transaction(async (tx) => {
+        if (offset !== null) {
+            await tx.update(uploadUsage).set({ bytesConsumed: offset }).where(eq(uploadUsage.fileId, fileId));
+        }
+        await tx.delete(files).where(eq(files.id, fileId));
+    });
+}
+
 tusServer.on(EVENTS.POST_TERMINATE, async (req, _res, id) => {
     const fileId = toShareId(id);
-    const offset = getTerminatedOffset(req);
     // An event listener: nothing awaits it, so a throw here would be an unhandled rejection.
     try {
-        await db.transaction(async (tx) => {
-            // Only charge for what was actually uploaded. The row outlives the file and keeps counting for the week.
-            if (offset !== null) {
-                await tx.update(uploadUsage).set({ bytesConsumed: offset }).where(eq(uploadUsage.fileId, fileId));
-            }
-            await tx.delete(files).where(eq(files.id, fileId));
-        });
+        await releaseUpload(fileId, getTerminatedOffset(req));
     } catch (err) {
         console.error(`cleanup after terminating upload ${fileId} failed:`, err);
     }
