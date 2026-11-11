@@ -1,6 +1,6 @@
-import { selectError, usePlayer } from "@videojs/react";
+import { createPlayer, orientationLockFeature, selectError, usePlayer } from "@videojs/react";
 import { HlsJsVideo } from "@videojs/react/media/hlsjs-video";
-import { Video, VideoPlayer as Player } from "@videojs/react/video";
+import { Video, videoFeatures } from "@videojs/react/video";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { readSubtitleFile, SubtitleFileContext } from "@/components/file/subtitles";
@@ -20,6 +20,10 @@ type Props = {
 };
 
 type Subtitle = { key: number; label: string; url: string };
+
+// The video preset plus orientation lock, which no preset includes: going fullscreen on a phone turns the
+// screen to the video's orientation, and leaving unlocks it. Android only; iOS doesn't let pages lock it.
+const { Player } = createPlayer({ features: [...videoFeatures, orientationLockFeature] });
 
 // Capped at 75% of the screen's height so a portrait video fits without scrolling. Sized to the video's
 // shape (16:9 until the probe has run): as wide as fits the height cap, never past the column or the
@@ -62,7 +66,8 @@ export default function VideoPlayer({ src, hlsUrl, poster, width, height, pendin
 
 	return (
 		<SubtitleFileContext.Provider value={subtitles.context}>
-			<Player poster={poster ?? undefined}>
+			{/* Portrait videos (phone recordings) stay portrait in fullscreen; until the probe has run, landscape. */}
+			<Player poster={poster ?? undefined} orientationLockType={width && height && height > width ? "portrait" : "landscape"}>
 				<VideoSkin className="mx-auto" style={box}>
 					{useStream ? (
 						<HlsJsVideo src={attached ? hlsUrl! : undefined} playsInline>

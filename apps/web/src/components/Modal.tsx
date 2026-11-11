@@ -78,7 +78,10 @@ export default function Modal({ open, onClose, title, description, children, siz
 					<span aria-hidden="true" className="inline-flex" dangerouslySetInnerHTML={{ __html: xmarkIcon }} />
 				</button>
 			</div>
-			<div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">{children}</div>
+			{/* flex-auto, not flex-1: the dialog has no set height, and Safari reads flex-1's 0% basis against
+			    that as zero, so with min-h-0 the body collapsed and clipped its content. auto starts at the
+			    content's height and still shrinks to scroll once the dialog hits its max height. */}
+			<div className="min-h-0 flex-auto overflow-y-auto px-6 pb-6">{children}</div>
 		</dialog>
 	);
 }
