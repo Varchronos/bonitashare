@@ -14,6 +14,7 @@ import { cn } from '@/lib/resolve-class-name';
 
 import { VideoGestures } from './behaviors/gestures';
 import { VideoHotkeys } from './behaviors/hotkeys';
+import { SubtitlesAboveControls } from './behaviors/subtitles-above-controls';
 import { VideoStatusIndicators } from './display/status-indicators';
 import { DefaultVideoControls } from './layout/controls';
 
@@ -42,6 +43,7 @@ export function VideoSkin({ children, className, renderPoster, renderThumbnail, 
       <VideoHotkeys />
       <VideoGestures />
       <VideoStatusIndicators />
+      <SubtitlesAboveControls />
     </Container>
   );
 }

@@ -32,7 +32,9 @@ export function DefaultVideoControls({ renderThumbnail }: DefaultVideoControlsPr
           'media-max-lg:before:h-(--media-controls-gradient-height) media-max-lg:before:bg-(image:--media-controls-top-gradient)'
         )}
       />
+      {/* data-subtitle-floor: the bottom bar, which subtitles are kept above (behaviors/subtitles-above-controls). */}
       <Controls.Content
+        data-subtitle-floor
         className={cn(
           'video-controls',
           'group/controls text-media-controls-foreground text-shadow-media',
@@ -51,6 +53,7 @@ export function DefaultVideoControls({ renderThumbnail }: DefaultVideoControlsPr
       >
         <Tooltip.Provider>
           <Controls.Group
+            data-subtitle-floor
             className={cn(
               'absolute inset-x-2 bottom-2 z-30 flex origin-bottom items-center rtl:flex-row-reverse rounded-media-controls p-0.5',
               'media-max-lg:bg-media-popover media-max-lg:text-media-popover-foreground',
