@@ -4,7 +4,7 @@ import { REPORT_REASON_OPTIONS, TAKEDOWN_STATE_OPTIONS, formatBytes } from "@bon
 import { getFileLink, getFileVideo } from "../../lib/file";
 import { currentAccount } from "../../lib/account";
 import ImagePreview from "../../components/file/ImagePreview.astro";
-import VideoPlayer from "../../components/file/VideoPlayer";
+import VideoPreview from "../../components/file/VideoPreview";
 import AudioPlayer from "../../components/file/AudioPlayer.astro";
 import FilePreview from "../../components/file/FilePreview.astro";
 import FileActions from "../../components/file/FileActions.astro";
@@ -137,7 +137,7 @@ const visit =
 					<div>
 						{isImage && <ImagePreview src={file.url} alt={file.filename} />}
 						{isVideo && (
-							<VideoPlayer
+							<VideoPreview
 								client:load
 								src={file.url}
 								hlsUrl={video?.hlsUrl ?? null}

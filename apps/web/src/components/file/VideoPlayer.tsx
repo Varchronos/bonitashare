@@ -4,6 +4,7 @@ import { Video, videoFeatures } from "@videojs/react/video";
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { readSubtitleFile, SubtitleFileContext } from "@/components/file/subtitles";
+import { videoBox } from "@/components/file/video-box";
 import { VideoSkin } from "@/components/videojs/video/skin";
 
 type Props = {
@@ -17,6 +18,8 @@ type Props = {
 	height: number | null;
 	// A transcode is still running.
 	pending: boolean;
+	// Start playing once loaded (the viewer already pressed play on the preview).
+	autoPlay?: boolean;
 };
 
 type Subtitle = { key: number; label: string; url: string };
@@ -25,17 +28,10 @@ type Subtitle = { key: number; label: string; url: string };
 // screen to the video's orientation, and leaving unlocks it. Android only; iOS doesn't let pages lock it.
 const { Player } = createPlayer({ features: [...videoFeatures, orientationLockFeature] });
 
-// Capped at 75% of the screen's height so a portrait video fits without scrolling. Sized to the video's
-// shape (16:9 until the probe has run): as wide as fits the height cap, never past the column or the
-// video's own width. Reserves the right space before playback starts.
-const MAX_HEIGHT = "75svh";
-
-export default function VideoPlayer({ src, hlsUrl, poster, width, height, pending }: Props) {
-	const [w, h] = width && height ? [width, height] : [16, 9];
-	const box = {
-		aspectRatio: `${w} / ${h}`,
-		width: `min(100%, ${width ? `${width}px, ` : ""}calc(${MAX_HEIGHT} * ${w} / ${h}))`,
-	};
+// Loaded by VideoPreview once the viewer presses play; the page doesn't render this directly.
+// `pending` is shown by the preview.
+export default function VideoPlayer({ src, hlsUrl, poster, width, height, autoPlay }: Props) {
+	const box = videoBox(width, height);
 
 	// The source is set only after the player has attached, so a failure while loading still reaches the
 	// error handler below (a server-rendered src can start loading before hydration).
@@ -70,11 +66,11 @@ export default function VideoPlayer({ src, hlsUrl, poster, width, height, pendin
 			<Player poster={poster ?? undefined} orientationLockType={width && height && height > width ? "portrait" : "landscape"}>
 				<VideoSkin className="mx-auto" style={box}>
 					{useStream ? (
-						<HlsJsVideo src={attached ? hlsUrl! : undefined} playsInline>
+						<HlsJsVideo src={attached ? hlsUrl! : undefined} playsInline autoPlay={autoPlay}>
 							{tracks}
 						</HlsJsVideo>
 					) : (
-						<Video src={attached ? src : undefined} playsInline>
+						<Video src={attached ? src : undefined} playsInline autoPlay={autoPlay}>
 							{tracks}
 						</Video>
 					)}
@@ -89,9 +85,6 @@ export default function VideoPlayer({ src, hlsUrl, poster, width, height, pendin
 				onChange={subtitles.onFileChange}
 			/>
 			{subtitles.error && <p className="mt-2 text-sm text-error" role="alert">{subtitles.error}</p>}
-			{pending && !hlsUrl && (
-				<p className="mt-2 text-sm text-on-surface-variant">A streaming version is still processing. Playing the original for now.</p>
-			)}
 		</SubtitleFileContext.Provider>
 	);
 }
