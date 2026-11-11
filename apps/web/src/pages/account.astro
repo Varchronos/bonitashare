@@ -11,7 +11,7 @@ const account = await currentAccount(Astro);
 if (!account?.email) return Astro.redirect('/signup');
 ---
 
-<Layout title="Account" description="Your bonitashare account.">
+<Layout noindex title="Account" description="Your bonitashare account.">
 	<!-- At least the screen below the navbar (h-16), so the delete section can sit at the bottom. -->
 	<section class="mx-auto flex min-h-[calc(100svh-4rem)] w-full max-w-page flex-col px-4 py-16 max-[800px]:pt-8">
 		<h1 class="mb-2 text-headline">{account.displayName ? `Hi, ${account.displayName}` : 'Your account'}</h1>

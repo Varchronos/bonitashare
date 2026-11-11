@@ -10,6 +10,6 @@ const account = await currentAccount(Astro);
 if (account?.email) return Astro.redirect('/account');
 ---
 
-<Layout title="Verify your email" description="Enter the code we emailed you to finish creating your bonitashare account.">
+<Layout noindex title="Verify your email" description="Enter the code we emailed you to finish creating your bonitashare account.">
 	<VerifyCode client:load />
 </Layout>

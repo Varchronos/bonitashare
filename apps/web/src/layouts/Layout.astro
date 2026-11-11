@@ -10,11 +10,15 @@ interface Props {
 	ogImage?: string | null;
 	// A small video unfurlers can play inline (Discord, Telegram, Slack…). Absolute URL.
 	ogVideo?: { url: string; type: string; width?: number | null; height?: number | null } | null;
+	// Pages that only make sense signed in (account, admin…): keep them out of search results.
+	noindex?: boolean;
 }
 
 const DEFAULT_DESCRIPTION = 'Share files fast: drop them in and get a link. No install needed.';
 
-const { title, description = DEFAULT_DESCRIPTION, ogImage, ogVideo } = Astro.props;
+const { title, description = DEFAULT_DESCRIPTION, ogImage, ogVideo, noindex = false } = Astro.props;
+// Path only, on the configured site: drops query strings and whichever host the request came in on.
+const canonical = new URL(Astro.url.pathname, Astro.site).toString();
 const fullTitle = title ? `${title} · bonitashare` : 'bonitashare';
 ---
 
@@ -49,6 +53,8 @@ const fullTitle = title ? `${title} · bonitashare` : 'bonitashare';
 		</script>
 		<title>{fullTitle}</title>
 		<meta name="description" content={description} />
+		{noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonical} />}
+		<meta property="og:url" content={canonical} />
 		<meta property="og:site_name" content="bonitashare" />
 		<meta property="og:title" content={title ?? 'bonitashare'} />
 		<meta property="og:description" content={description} />

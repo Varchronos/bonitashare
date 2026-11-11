@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bonitashare.dhruvrajak.dev/sitemap.xml

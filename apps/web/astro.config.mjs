@@ -8,6 +8,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 // https://astro.build/config
 export default defineConfig({
+  // The canonical address: canonical tags, og:url and the sitemap are built from it.
+  site: 'https://bonitashare.dhruvrajak.dev',
   output: 'server',
   adapter: node({ mode: 'standalone' }),
   integrations: [react(), partytown()],
