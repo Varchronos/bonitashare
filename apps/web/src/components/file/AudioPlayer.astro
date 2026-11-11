@@ -1,0 +1,9 @@
+---
+interface Props {
+	src: string;
+}
+
+const { src } = Astro.props;
+---
+
+<audio src={src} controls class="w-full"></audio>

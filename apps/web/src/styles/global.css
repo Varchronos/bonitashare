@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "../components/videojs/styles/tailwind.css";
 
 /* Material 3. Colour roles from an M3 tonal scheme with an orange seed, plus green success and yellow
    warning sets M3 doesn't define. `on-*` is the colour for text and icons sitting on the role it names. */

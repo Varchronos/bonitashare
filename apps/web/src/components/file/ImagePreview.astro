@@ -1,0 +1,12 @@
+---
+interface Props {
+	src: string;
+	alt: string;
+}
+
+const { src, alt } = Astro.props;
+---
+
+<!-- Capped at 75% of the screen's height so a portrait image fits without scrolling; it then narrows to
+     keep its shape and centres. -->
+<img src={src} alt={alt} class="mx-auto block h-auto w-auto max-h-[75svh] max-w-full rounded-2xl object-contain" />
