@@ -73,3 +73,40 @@ export function RestoreIcon({ size = 18, className }: IconProps & { className?: 
 		</svg>
 	);
 }
+
+export function SearchIcon({ size = 20 }: IconProps) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+			<circle cx="11" cy="11" r="6.5" />
+			<path d="m20 20-4.4-4.4" />
+		</svg>
+	);
+}
+
+export function GridIcon({ size = 20 }: IconProps) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+			<rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+			<rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+			<rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+			<rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.5" />
+		</svg>
+	);
+}
+
+export function ListIcon({ size = 20 }: IconProps) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+			<path d="M9 6h11M9 12h11M9 18h11" />
+			<path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" strokeWidth={2.5} />
+		</svg>
+	);
+}
+
+export function CloseIcon({ size = 18 }: IconProps) {
+	return (
+		<svg width={size} height={size} viewBox="0 0 24 24" {...base}>
+			<path d="M6 6l12 12M18 6 6 18" />
+		</svg>
+	);
+}
