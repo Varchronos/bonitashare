@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { formatBytes } from '@bonitashare/shared-types';
 import { useUploadStore, type UploadTask } from '../../store/file-store';
-import { pauseUpload, resumeUpload, cancelUpload, canRetry, shareIdFor, watchThumbnail } from '../../lib/upload-task';
+import { pauseUpload, resumeUpload, cancelUpload, canRetry, shareIdFor, thumbnailPollDelays, watchThumbnail } from '../../lib/upload-task';
 import { TrashIcon, CheckIcon, PauseIcon, PlayIcon, RetryIcon } from './icons';
 import FileThumb from './FileThumb';
 import ShareLinks from './ShareLinks';
@@ -27,10 +27,9 @@ export default function TaskRow({ id }: { id: string }) {
 	// reference and never re-render when this one's progress changes.
 	const task = useUploadStore((s) => s.files.find((f) => f.id === id));
 
-	// Images get a thumbnail and videos a poster frame; other types never poll.
+	// Images and PDFs get a thumbnail and videos a poster frame; other types never poll.
 	const isVideo = task?.contentType.startsWith('video/') ?? false;
-	const awaitingThumbnail =
-		task?.status === 'done' && !task.thumbnailUrl && (task.contentType.startsWith('image/') || isVideo);
+	const awaitingThumbnail = task?.status === 'done' && !task.thumbnailUrl && thumbnailPollDelays(task.contentType) !== null;
 	useEffect(() => {
 		if (!awaitingThumbnail) return;
 		const controller = new AbortController();

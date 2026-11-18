@@ -28,6 +28,12 @@ export type FileVideo = {
 	height: number | null;
 };
 
+export type FileText = {
+	text: string;
+	// Longer than `text`, which is only the start of the file.
+	truncated: boolean;
+};
+
 // Server-to-server calls during render — see lib/session.ts for why (no
 // CORS, no client-side round trip before the page can render).
 // Renews an expired session first, so an owner viewing their own private

@@ -2,12 +2,14 @@
 import Layout from "../../layouts/Layout.astro";
 import { REPORT_REASON_OPTIONS, TAKEDOWN_STATE_OPTIONS, formatBytes } from "@bonitashare/shared-types";
 import { getFileLink, getFileVideo } from "../../lib/file";
+import { codeLanguage } from "../../lib/code-lang";
 import { currentAccount } from "../../lib/account";
 import ImagePreview from "../../components/file/ImagePreview.astro";
 import VideoPreview from "../../components/file/VideoPreview";
 import AudioPlayer from "../../components/file/AudioPlayer.astro";
 import FilePreview from "../../components/file/FilePreview.astro";
 import PdfPreview from "../../components/file/PdfPreview.astro";
+import CodeViewer from "../../components/file/CodeViewer";
 import FileActions from "../../components/file/FileActions.astro";
 import TakedownTool from "../../components/TakedownTool";
 import warningIcon from "../../assets/warning.svg?raw";
@@ -26,6 +28,10 @@ const isPdf = file?.contentType === "application/pdf";
 
 // Transcode state: the player picks the stream or the original, the link preview uses the dimensions.
 const video = isVideo ? (await getFileVideo(cookie, id!)).data : null;
+
+// Source and text files open in the code viewer, which fetches the text itself. If the bytes turn out
+// not to be text (a .ts video segment, say), it shows "no preview" instead.
+const codeLang = file && !isImage && !isVideo && !isAudio && !isPdf ? codeLanguage(file.filename, file.contentType) : null;
 
 // Link previews: the thumbnail, or for an image without one yet (the worker makes it shortly after
 // upload, which is when links get shared) the image itself if it's small enough for unfurlers to fetch.
@@ -50,7 +56,7 @@ const ogVideo =
 		: null;
 
 // Private and missing files get the same text as each other, so a preview doesn't reveal which it is.
-const kind = isImage ? "Image" : isVideo ? "Video" : isAudio ? "Audio" : isPdf ? "PDF" : "File";
+const kind = isImage ? "Image" : isVideo ? "Video" : isAudio ? "Audio" : isPdf ? "PDF" : codeLang ? "Code" : "File";
 const description = file
 	? `${kind} shared on bonitashare · ${formatBytes(file.sizeBytes)}${file.contentType ? ` · ${file.contentType}` : ""}`
 	: error?.code === "FILE_EXPIRED"
@@ -151,7 +157,8 @@ const visit =
 						)}
 						{isAudio && <AudioPlayer src={file.url} />}
 						{isPdf && <PdfPreview src={file.url} title={file.filename} thumbnailUrl={file.thumbnailUrl} />}
-						{!isImage && !isVideo && !isAudio && !isPdf && <FilePreview />}
+						{codeLang && <CodeViewer client:load fileId={id!} language={codeLang} downloadUrl={file.downloadUrl} />}
+						{!isImage && !isVideo && !isAudio && !isPdf && !codeLang && <FilePreview />}
 					</div>
 				</>
 			) : (

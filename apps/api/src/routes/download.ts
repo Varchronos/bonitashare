@@ -5,7 +5,7 @@ import { db } from '@/db/client.js';
 import { fileTakedowns, fileVideos, files, notDeleted } from '@bonitashare/core/db';
 import { isAdminUser } from '@/plugins/custom/handleSession.js';
 import { BUCKET } from '@bonitashare/core/storage';
-import { hlsUrl, publicStorage, thumbUrl } from '@/storage/client.js';
+import { hlsUrl, publicStorage, storage, thumbUrl } from '@/storage/client.js';
 
 const URL_EXPIRY_SECONDS = 60 * 60;
 
@@ -110,6 +110,32 @@ const INLINE_MEDIA_TYPES = new Set([
     'application/pdf',
 ]);
 
+type FileText = {
+    text: string;
+    // The file is longer than what's in `text`, which is its first MAX_TEXT_PREVIEW_BYTES.
+    truncated: boolean;
+};
+
+// The share page's viewer only draws the lines on screen, so this mainly bounds the response and the
+// browser's memory. Bigger files show their start and a note to download the rest.
+const MAX_TEXT_PREVIEW_BYTES = 1024 * 1024;
+
+// UTF-8 text, or null for anything that isn't (binary, another encoding). A read cut off mid-file can
+// end partway through a character, so up to 3 trailing bytes are dropped before giving up on it.
+function decodeText(bytes: Buffer, truncated: boolean): string | null {
+    // A NUL byte almost never appears in text and almost always does in binary formats.
+    if (bytes.includes(0)) return null;
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    for (let drop = 0; drop <= (truncated ? 3 : 0); drop++) {
+        try {
+            return decoder.decode(bytes.subarray(0, bytes.length - drop));
+        } catch {
+            // Try again with one byte fewer.
+        }
+    }
+    return null;
+}
+
 const downloadRoutes: FastifyPluginAsync = async (fastify) => {
     // Public, but owners can also fetch their own private files.
     fastify.addHook('onRequest', fastify.optionalSession);
@@ -148,6 +174,30 @@ const downloadRoutes: FastifyPluginAsync = async (fastify) => {
             },
             error: null,
         };
+    });
+
+    // The start of a text file, for the share page's code view. Read here with the internal storage client
+    // rather than by the web server from the presigned URL, which points at the public endpoint.
+    fastify.get<{ Params: { id: string } }>('/download/:id/text', async (req, reply): Promise<ApiResponse<FileText>> => {
+        const { file, failure } = await findServableFile(req, reply);
+        if (!file) return failure;
+
+        const truncated = file.sizeBytes > MAX_TEXT_PREVIEW_BYTES;
+        let bytes = Buffer.alloc(0);
+        // A length of 0 would mean "to the end", so an empty file isn't read at all.
+        if (file.sizeBytes > 0) {
+            const stream = await storage.getPartialObject(BUCKET, file.storageKey, 0, Math.min(file.sizeBytes, MAX_TEXT_PREVIEW_BYTES));
+            const chunks: Buffer[] = [];
+            for await (const chunk of stream) chunks.push(chunk as Buffer);
+            bytes = Buffer.concat(chunks);
+        }
+
+        const text = decodeText(bytes, truncated);
+        if (text === null) {
+            reply.code(415);
+            return { data: null, error: { message: 'This file is not UTF-8 text', code: 'NOT_TEXT' } };
+        }
+        return { data: { text, truncated }, error: null };
     });
 
     // Separate from /download/:id so non-video files never pay for the extra query.

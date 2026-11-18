@@ -278,14 +278,24 @@ const THUMBNAIL_POLL_DELAYS_MS = [1000, 2000, 4000, 8000]
 // probed the file, and behind any transcode already running, so it gets
 // about two minutes rather than fifteen seconds.
 const VIDEO_THUMBNAIL_POLL_DELAYS_MS = [2000, 4000, 8000, 15000, 30000, 60000]
+// A PDF is downloaded whole before its first page renders, which can take a while for big files.
+const PDF_THUMBNAIL_POLL_DELAYS_MS = [1000, 2000, 4000, 8000, 15000]
+
+// How long to keep checking for this type's thumbnail, or null for types the worker makes none for.
+// Must match the types the worker thumbnails (apps/worker/src/index.ts).
+export function thumbnailPollDelays(contentType: string): number[] | null {
+    if (contentType.startsWith('image/')) return THUMBNAIL_POLL_DELAYS_MS
+    if (contentType.startsWith('video/')) return VIDEO_THUMBNAIL_POLL_DELAYS_MS
+    if (contentType === 'application/pdf') return PDF_THUMBNAIL_POLL_DELAYS_MS
+    return null
+}
 
 export async function watchThumbnail(id: string, signal: AbortSignal) {
     const task = useUploadStore.getState().files.find((f) => f.id === id)
     const shareId = task && shareIdFor(task)
     if (!shareId) return
 
-    const delays = task.contentType.startsWith('video/') ? VIDEO_THUMBNAIL_POLL_DELAYS_MS : THUMBNAIL_POLL_DELAYS_MS
-    for (const delay of delays) {
+    for (const delay of thumbnailPollDelays(task.contentType) ?? []) {
         await new Promise((resolve) => setTimeout(resolve, delay))
         if (signal.aborted) return
         try {
