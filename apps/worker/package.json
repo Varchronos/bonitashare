@@ -16,6 +16,7 @@
     "dotenv": "^18.0.1",
     "drizzle-orm": "catalog:",
     "nanoid": "^5.1.6",
+    "node-poppler": "^11.0.0",
     "sharp": "^0.34.2"
   },
   "devDependencies": {

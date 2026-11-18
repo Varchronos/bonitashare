@@ -1,4 +1,7 @@
 import 'dotenv/config';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { UnrecoverableError, Worker, type Job } from 'bullmq';
 import sharp from 'sharp';
@@ -30,6 +33,7 @@ import {
     type FileProcessingJobName,
     type ProcessUploadJob,
 } from '@bonitashare/core/queue';
+import { convertToWebp } from './clients/poppler.js';
 
 const { db, pool } = createDb(process.env.DATABASE_URL!);
 const storage = createStorage();
@@ -43,6 +47,8 @@ const THUMBNAILABLE_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'image/w
 
 // Bigger images just go without a thumbnail the file itself is unaffected.
 const MAX_THUMBNAIL_SOURCE_BYTES = 50 * 1024 * 1024;
+// PDFs are downloaded to local disk before rendering, so this also bounds the temp space a job uses.
+const MAX_PDF_THUMBNAIL_SOURCE_BYTES = 100 * 1024 * 1024;
 
 const RECONCILE_EVERY_MS = 5 * 60 * 1000;
 // Well past a normal queue wait, so the sweep mostly finds jobs that were never enqueued.
@@ -66,7 +72,7 @@ async function streamToBuffer(stream: AsyncIterable<unknown>): Promise<Buffer> {
     return Buffer.concat(chunks);
 }
 
-async function generateThumbnail(fileId: string, storageKey: string) {
+async function generateImageThumbnail(fileId: string, storageKey: string) {
     const original = await storage.getObject(BUCKET, storageKey);
     // Streamed straight into sharp so the compressed original is never held in memory.
     // sharp's default limitInputPixels (~268MP) still rejects decompression bombs.
@@ -90,6 +96,32 @@ async function generateThumbnail(fileId: string, storageKey: string) {
         throw err;
     }
 
+    await saveThumbnail(fileId, thumbnail);
+}
+
+async function generatePdfThumbnail(fileId: string, storageKey: string) {
+    const workdir = await mkdtemp(path.join(tmpdir(), 'pdf-thumb-'));
+    try {
+        // To disk rather than streamed: poppler needs to seek around the file, so it can't read from a pipe.
+        // Download errors stay retryable.
+        const pdfPath = path.join(workdir, 'source.pdf');
+        await storage.fGetObject(BUCKET, storageKey, pdfPath);
+
+        let thumbnail: Buffer;
+        try {
+            thumbnail = await convertToWebp(pdfPath, workdir);
+        } catch (err) {
+            // Corrupt, encrypted or not a PDF at all: the stored bytes won't change, so retrying is wasted work.
+            // A timeout counts too, as the same document would hit it again.
+            throw new UnrecoverableError(`pdf thumbnail: ${(err as Error).message}`);
+        }
+        await saveThumbnail(fileId, thumbnail);
+    } finally {
+        await rm(workdir, { recursive: true, force: true });
+    }
+}
+
+async function saveThumbnail(fileId: string, thumbnail: Buffer) {
     // Random rather than the share id: the thumb bucket is public, so the key must not be derivable
     // from a link to a private file. A fresh key per thumbnail also makes it safe to cache forever.
     const thumbKey = `${nanoid(21)}.webp`;
@@ -132,7 +164,11 @@ async function processUpload(job: Job<ProcessUploadJob>) {
         THUMBNAILABLE_CONTENT_TYPES.has(file.contentType) &&
         file.sizeBytes <= MAX_THUMBNAIL_SOURCE_BYTES
     ) {
-        await generateThumbnail(file.id, file.storageKey);
+        await generateImageThumbnail(file.id, file.storageKey);
+    }
+
+    if (file.contentType === 'application/pdf' && file.sizeBytes <= MAX_PDF_THUMBNAIL_SOURCE_BYTES) {
+        await generatePdfThumbnail(file.id, file.storageKey);
     }
 
     // The video-worker probes the file itself, so anything claiming to be video is handed over;
@@ -237,7 +273,7 @@ async function purgeFile(fileId: string) {
 async function purgeDeletedFiles() {
     let purged = 0;
     let failed = 0;
-    for (;;) {
+    for (; ;) {
         const due = await db
             .select({ fileId: fileDeletions.fileId })
             .from(fileDeletions)
@@ -305,7 +341,7 @@ async function purgeTakedownFile(fileId: string) {
 async function purgeTakedownContent() {
     let purged = 0;
     let failed = 0;
-    for (;;) {
+    for (; ;) {
         const due = await db
             .select({ fileId: fileTakedowns.fileId })
             .from(fileTakedowns)

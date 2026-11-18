@@ -1,0 +1,38 @@
+---
+interface Props {
+	src: string;
+	title: string;
+	thumbnailUrl: string | null;
+}
+
+const { src, title, thumbnailUrl } = Astro.props;
+---
+
+<!-- The browser's own PDF viewer in an iframe. Phones (Android Chrome, most in-app browsers) have none and
+     would download the file instead, so the page starts with the first-page thumbnail and a link, and the
+     script below swaps in the iframe only where navigator.pdfViewerEnabled says the browser can show it. -->
+<div data-pdf-preview data-src={src} data-title={title}>
+	<div class="card flex flex-col items-center gap-4 p-6 text-center">
+		{
+			thumbnailUrl && (
+				<a href={src} target="_blank" rel="noopener" class="block">
+					<img src={thumbnailUrl} alt="" class="max-h-[50svh] w-auto rounded-lg bg-white shadow-sm" />
+				</a>
+			)
+		}
+		<a href={src} target="_blank" rel="noopener" class="btn btn-tonal">Open PDF</a>
+	</div>
+</div>
+
+<script>
+	for (const el of document.querySelectorAll<HTMLElement>("[data-pdf-preview]")) {
+		if (!navigator.pdfViewerEnabled) continue;
+		const frame = document.createElement("iframe");
+		frame.src = el.dataset.src!;
+		frame.title = el.dataset.title!;
+		// No sandbox: Chrome won't run its PDF viewer in a sandboxed frame. The file is on the storage
+		// domain, so whatever it does there can't reach this page or its cookies.
+		frame.className = "block h-[80svh] w-full rounded-2xl border border-outline-variant bg-surface-container";
+		el.replaceChildren(frame);
+	}
+</script>

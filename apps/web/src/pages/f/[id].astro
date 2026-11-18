@@ -7,6 +7,7 @@ import ImagePreview from "../../components/file/ImagePreview.astro";
 import VideoPreview from "../../components/file/VideoPreview";
 import AudioPlayer from "../../components/file/AudioPlayer.astro";
 import FilePreview from "../../components/file/FilePreview.astro";
+import PdfPreview from "../../components/file/PdfPreview.astro";
 import FileActions from "../../components/file/FileActions.astro";
 import TakedownTool from "../../components/TakedownTool";
 import warningIcon from "../../assets/warning.svg?raw";
@@ -21,6 +22,7 @@ if (!file) {
 const isImage = file?.contentType?.startsWith("image/") ?? false;
 const isVideo = file?.contentType?.startsWith("video/") ?? false;
 const isAudio = file?.contentType?.startsWith("audio/") ?? false;
+const isPdf = file?.contentType === "application/pdf";
 
 // Transcode state: the player picks the stream or the original, the link preview uses the dimensions.
 const video = isVideo ? (await getFileVideo(cookie, id!)).data : null;
@@ -48,7 +50,7 @@ const ogVideo =
 		: null;
 
 // Private and missing files get the same text as each other, so a preview doesn't reveal which it is.
-const kind = isImage ? "Image" : isVideo ? "Video" : isAudio ? "Audio" : "File";
+const kind = isImage ? "Image" : isVideo ? "Video" : isAudio ? "Audio" : isPdf ? "PDF" : "File";
 const description = file
 	? `${kind} shared on bonitashare · ${formatBytes(file.sizeBytes)}${file.contentType ? ` · ${file.contentType}` : ""}`
 	: error?.code === "FILE_EXPIRED"
@@ -148,7 +150,8 @@ const visit =
 							/>
 						)}
 						{isAudio && <AudioPlayer src={file.url} />}
-						{!isImage && !isVideo && !isAudio && <FilePreview />}
+						{isPdf && <PdfPreview src={file.url} title={file.filename} thumbnailUrl={file.thumbnailUrl} />}
+						{!isImage && !isVideo && !isAudio && !isPdf && <FilePreview />}
 					</div>
 				</>
 			) : (

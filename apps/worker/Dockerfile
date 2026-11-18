@@ -9,7 +9,8 @@ RUN corepack enable && corepack prepare pnpm@12.5.1 --activate
 # image because it is a static Go binary, so no apt repo or keyring setup is needed.
 COPY --from=dopplerhq/cli:3.76.5 /bin/doppler /usr/local/bin/doppler
 # The slim base has no CA bundle, which doppler needs to reach its API over HTTPS.
-RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
+# poppler-utils provides pdftocairo for PDF thumbnails; node-poppler fails at startup without it.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates poppler-utils && rm -rf /var/lib/apt/lists/*
 COPY --chmod=755 docker/doppler-entrypoint.sh /usr/local/bin/doppler-entrypoint
 WORKDIR /app
 

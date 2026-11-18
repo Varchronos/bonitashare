@@ -96,9 +96,19 @@ function contentDisposition(type: 'inline' | 'attachment', filename: string) {
 }
 
 // Uploads are stored as binary/octet-stream, which link-preview crawlers won't take as an image or
-// play as a video (og:video). Only raster images and plain video containers: they can't carry
-// script, unlike SVG or HTML served from the storage domain.
-const INLINE_MEDIA_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'video/mp4', 'video/webm']);
+// play as a video (og:video), and which an iframe downloads instead of showing (the share page's PDF
+// viewer). Only raster images, plain video containers and PDF: unlike SVG or HTML, they can't run
+// script on the storage domain. PDF script runs only inside the browser's sandboxed PDF viewer.
+const INLINE_MEDIA_TYPES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/avif',
+    'video/mp4',
+    'video/webm',
+    'application/pdf',
+]);
 
 const downloadRoutes: FastifyPluginAsync = async (fastify) => {
     // Public, but owners can also fetch their own private files.
